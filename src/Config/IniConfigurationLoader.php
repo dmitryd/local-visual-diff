@@ -117,6 +117,7 @@ final class IniConfigurationLoader
                     $nested['crawl'][$key] = $value;
                     break;
                 case 'output_dir':
+                case 'artifact_image_format':
                     $nested['report'][$key] = $value;
                     break;
                 case 'capture_matching_screenshots':

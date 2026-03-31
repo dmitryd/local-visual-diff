@@ -6,6 +6,7 @@ namespace LocalVisualDiff\Compare;
 
 use Imagick;
 use ImagickPixel;
+use LocalVisualDiff\Support\ArtifactImageWriter;
 use RuntimeException;
 
 /**
@@ -21,11 +22,21 @@ use RuntimeException;
 final class ImageComparator
 {
     public function __construct(
-        private readonly OverlayGenerator $overlayGenerator = new OverlayGenerator(),
-        private readonly DiffImageGenerator $diffImageGenerator = new DiffImageGenerator(),
-        private readonly ContextArtifactGenerator $contextArtifactGenerator = new ContextArtifactGenerator()
+        private readonly ArtifactImageWriter $artifactImageWriter = new ArtifactImageWriter(),
+        ?OverlayGenerator $overlayGenerator = null,
+        ?DiffImageGenerator $diffImageGenerator = null,
+        ?ContextArtifactGenerator $contextArtifactGenerator = null
     ) {
+        $this->overlayGenerator = $overlayGenerator ?? new OverlayGenerator($this->artifactImageWriter);
+        $this->diffImageGenerator = $diffImageGenerator ?? new DiffImageGenerator($this->artifactImageWriter);
+        $this->contextArtifactGenerator = $contextArtifactGenerator ?? new ContextArtifactGenerator(new OverlayGenerator($this->artifactImageWriter));
     }
+
+    private readonly OverlayGenerator $overlayGenerator;
+
+    private readonly DiffImageGenerator $diffImageGenerator;
+
+    private readonly ContextArtifactGenerator $contextArtifactGenerator;
 
     public function compare(
         string $baselinePath,
@@ -409,17 +420,15 @@ final class ImageComparator
             throw new RuntimeException(sprintf('Could not create artifact directory: %s', $artifactDirectory));
         }
 
-        $baselinePath = $artifactDirectory . DIRECTORY_SEPARATOR . 'baseline.png';
-        $candidatePath = $artifactDirectory . DIRECTORY_SEPARATOR . 'candidate.png';
-        $overlayPath = $artifactDirectory . DIRECTORY_SEPARATOR . 'overlay.png';
-        $diffPath = $artifactDirectory . DIRECTORY_SEPARATOR . 'diff.png';
+        $baselinePath = $this->artifactImageWriter->artifactPath($artifactDirectory, 'baseline');
+        $candidatePath = $this->artifactImageWriter->artifactPath($artifactDirectory, 'candidate');
+        $overlayPath = $this->artifactImageWriter->artifactPath($artifactDirectory, 'overlay');
+        $diffPath = $this->artifactImageWriter->artifactPath($artifactDirectory, 'diff');
 
         $baselineImage = clone $baselineImage;
         $candidateImage = clone $candidateImage;
-        $baselineImage->setImageFormat('png');
-        $candidateImage->setImageFormat('png');
-        $baselineImage->writeImage($baselinePath);
-        $candidateImage->writeImage($candidatePath);
+        $this->artifactImageWriter->writeImage($baselineImage, $baselinePath);
+        $this->artifactImageWriter->writeImage($candidateImage, $candidatePath);
 
         $this->overlayGenerator->generate($baselineImage, $candidateImage, $overlayPath);
         $this->diffImageGenerator->generate($baselineImage, $changedRuns, $diffPath);
@@ -430,7 +439,7 @@ final class ImageComparator
             $bounds = $this->changedRunBounds($changedRuns);
 
             if ($bounds !== null) {
-                $contextPath = $artifactDirectory . DIRECTORY_SEPARATOR . 'context.png';
+                $contextPath = $this->artifactImageWriter->artifactPath($artifactDirectory, 'context');
                 $this->contextArtifactGenerator->generate(
                     $baselineImage,
                     $candidateImage,

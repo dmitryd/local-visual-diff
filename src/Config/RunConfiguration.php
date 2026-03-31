@@ -37,6 +37,7 @@ final class RunConfiguration
         public readonly bool $crawlFetchVerifyTls = false,
         public readonly int $maxPages = 0,
         public readonly bool $captureMatchingScreenshots = false,
+        public readonly string $artifactImageFormat = 'webp',
         public readonly bool $overwrite = false,
         public readonly bool $verbose = false,
         public readonly bool $veryVerbose = false,
@@ -77,6 +78,7 @@ final class RunConfiguration
             crawlFetchVerifyTls: self::boolValue($settings, ['crawl', 'fetch_verify_tls'], false),
             maxPages: self::intValue($settings, ['crawl', 'max_pages'], 0),
             captureMatchingScreenshots: self::boolValue($settings, ['run', 'capture_matching_screenshots'], false),
+            artifactImageFormat: self::stringValue($settings, ['report', 'artifact_image_format'], 'webp') ?? 'webp',
             overwrite: self::boolValue($settings, ['run', 'overwrite'], false)
         );
     }

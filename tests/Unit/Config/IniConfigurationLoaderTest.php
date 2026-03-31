@@ -48,6 +48,7 @@ max_pages = 0
 
 [report]
 output_dir = "var/results"
+artifact_image_format = "webp"
 
 [run]
 capture_matching_screenshots = false
@@ -71,6 +72,7 @@ INI);
         self::assertSame(1440, $config->viewportWidth);
         self::assertSame(900, $config->viewportHeight);
         self::assertSame('var/results', $config->outputDir);
+        self::assertSame('webp', $config->artifactImageFormat);
         self::assertTrue($config->crawlHomepageLinks);
         self::assertSame('', $config->ignoredQueryParamNamePattern);
         self::assertFalse($config->crawlFetchVerifyTls);

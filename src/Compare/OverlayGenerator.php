@@ -6,6 +6,7 @@ namespace LocalVisualDiff\Compare;
 
 use Imagick;
 use ImagickPixel;
+use LocalVisualDiff\Support\ArtifactImageWriter;
 
 /**
  * Write a human-friendly overlay image.
@@ -15,10 +16,12 @@ use ImagickPixel;
  */
 final class OverlayGenerator
 {
+    public function __construct(private readonly ArtifactImageWriter $artifactImageWriter = new ArtifactImageWriter())
+    {
+    }
+
     public function generate(Imagick $baselineImage, Imagick $candidateImage, string $outputPath): string
     {
-        $this->ensureDirectoryExists($outputPath);
-
         $baseline = clone $baselineImage;
         $candidate = clone $candidateImage;
 
@@ -32,10 +35,8 @@ final class OverlayGenerator
         $candidate->evaluateImage(Imagick::EVALUATE_MULTIPLY, 0.5, Imagick::CHANNEL_ALPHA);
 
         $baseline->compositeImage($candidate, Imagick::COMPOSITE_OVER, 0, 0);
-        $baseline->setImageFormat('png');
-        $baseline->writeImage($outputPath);
 
-        return $outputPath;
+        return $this->artifactImageWriter->writeImage($baseline, $outputPath);
     }
 
     private function normalizeCanvas(Imagick $image, int $width, int $height): Imagick
@@ -44,18 +45,5 @@ final class OverlayGenerator
         $image->extentImage($width, $height, 0, 0);
 
         return $image;
-    }
-
-    private function ensureDirectoryExists(string $outputPath): void
-    {
-        $directory = dirname($outputPath);
-
-        if (is_dir($directory)) {
-            return;
-        }
-
-        if (!mkdir($directory, 0777, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Could not create output directory: %s', $directory));
-        }
     }
 }

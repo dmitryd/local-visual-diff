@@ -10,6 +10,7 @@ use LocalVisualDiff\Compare\ImageComparator;
 use LocalVisualDiff\Config\RunConfiguration;
 use LocalVisualDiff\Report\ReportRenderer;
 use LocalVisualDiff\Report\ReportViewModelFactory;
+use LocalVisualDiff\Support\ArtifactImageWriter;
 use LocalVisualDiff\Support\Clock;
 use LocalVisualDiff\Support\Filesystem;
 use LocalVisualDiff\Support\RunProfiler;
@@ -113,11 +114,13 @@ final class ComparisonRunner
         $pageSlug = $this->slugger->slugPath($path);
         $pageDir = $this->filesystem->joinPath($outputDir, 'pages', $pageSlug);
         $this->filesystem->ensureDirectory($pageDir);
+        $artifactImageWriter = new ArtifactImageWriter($configuration->artifactImageFormat);
+        $imageComparator = $this->imageComparatorFor($configuration->artifactImageFormat);
 
         $baselineUrl = $this->joinBaseUrlAndPath($configuration->baselineBaseUrl, $path);
         $candidateUrl = $this->joinBaseUrlAndPath($configuration->candidateBaseUrl, $path);
-        $baselineScreenshotPath = $this->filesystem->joinPath($pageDir, 'baseline.png');
-        $candidateScreenshotPath = $this->filesystem->joinPath($pageDir, 'candidate.png');
+        $baselineScreenshotPath = $this->filesystem->joinPath($pageDir, 'baseline.capture.png');
+        $candidateScreenshotPath = $this->filesystem->joinPath($pageDir, 'candidate.capture.png');
 
         try {
             $baselineSnapshot = $profiler->measure(
@@ -191,7 +194,7 @@ final class ComparisonRunner
             $pageHeight = max($baselineSnapshot->pageHeight, $candidateSnapshot->pageHeight);
             $comparison = $profiler->measure(
                 'compare_images',
-                fn () => $this->imageComparator->compare(
+                fn () => $imageComparator->compare(
                     $baselineScreenshotPath,
                     $candidateScreenshotPath,
                     $configuration->shiftTolerance,
@@ -222,6 +225,9 @@ final class ComparisonRunner
         $artifacts = $this->relativeArtifacts($outputDir, $comparison->artifacts);
 
         if ($comparison->hasDiff) {
+            $this->filesystem->removeFileIfExists($baselineScreenshotPath);
+            $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+
             return new PageResult(
                 $path,
                 $title,
@@ -251,6 +257,14 @@ final class ComparisonRunner
             );
         }
 
+        $baselineArtifactPath = $artifactImageWriter->artifactPath($pageDir, 'baseline');
+        $candidateArtifactPath = $artifactImageWriter->artifactPath($pageDir, 'candidate');
+
+        $this->copyScreenshotToArtifact($baselineScreenshotPath, $baselineArtifactPath, $artifactImageWriter);
+        $this->copyScreenshotToArtifact($candidateScreenshotPath, $candidateArtifactPath, $artifactImageWriter);
+        $this->filesystem->removeFileIfExists($baselineScreenshotPath);
+        $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+
         return new PageResult(
             $path,
             $title,
@@ -259,10 +273,10 @@ final class ComparisonRunner
             $candidateUrl,
             $baselineSnapshot->httpStatus,
             $candidateSnapshot->httpStatus,
-            array_merge($artifacts, [
-                'baseline' => $this->filesystem->relativePath($outputDir, $baselineScreenshotPath),
-                'candidate' => $this->filesystem->relativePath($outputDir, $candidateScreenshotPath),
-            ])
+            [
+                'baseline' => $this->filesystem->relativePath($outputDir, $baselineArtifactPath),
+                'candidate' => $this->filesystem->relativePath($outputDir, $candidateArtifactPath),
+            ]
         );
     }
 
@@ -421,5 +435,21 @@ final class ComparisonRunner
         }
 
         fwrite(STDOUT, $message . PHP_EOL);
+    }
+
+    private function copyScreenshotToArtifact(string $sourcePath, string $targetPath, ArtifactImageWriter $artifactImageWriter): void
+    {
+        $image = new \Imagick();
+        $image->readImage($sourcePath);
+        $artifactImageWriter->writeImage($image, $targetPath);
+    }
+
+    private function imageComparatorFor(string $artifactImageFormat): ImageComparator
+    {
+        if (strtolower(trim($artifactImageFormat)) === 'webp') {
+            return $this->imageComparator;
+        }
+
+        return new ImageComparator(new ArtifactImageWriter($artifactImageFormat));
     }
 }

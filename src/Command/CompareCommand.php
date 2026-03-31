@@ -60,6 +60,7 @@ final class CompareCommand extends Command
             ->addOption('ignored-query-param-name-pattern', null, InputOption::VALUE_REQUIRED, 'Regex for query parameter names that should be removed during crawl deduplication.')
             ->addOption('insecure-crawl-fetch', null, InputOption::VALUE_NONE, 'Disable TLS certificate verification for recursive crawl HTML fetching.')
             ->addOption('max-pages', null, InputOption::VALUE_REQUIRED, 'Maximum number of pages to compare.')
+            ->addOption('artifact-image-format', null, InputOption::VALUE_REQUIRED, 'Stored report artifact image format, for example webp or png.')
             ->addOption('capture-matching-screenshots', null, InputOption::VALUE_NONE, 'Keep screenshots for matching pages.')
             ->addOption('overwrite', null, InputOption::VALUE_NONE, 'Allow existing output directories to be reused.')
             ->addOption('profile', null, InputOption::VALUE_NONE, 'TEMPORARY: print timing diagnostics for performance investigation.');
@@ -102,6 +103,7 @@ final class CompareCommand extends Command
                 crawlFetchVerifyTls: $config->crawlFetchVerifyTls,
                 maxPages: $config->maxPages,
                 captureMatchingScreenshots: $config->captureMatchingScreenshots,
+                artifactImageFormat: $config->artifactImageFormat,
                 overwrite: $config->overwrite,
                 verbose: !$output->isQuiet(),
                 veryVerbose: $output->isVerbose(),
@@ -145,6 +147,7 @@ final class CompareCommand extends Command
             'ignored_query_param_name_pattern' => $input->getOption('ignored-query-param-name-pattern'),
             'fetch_verify_tls' => $input->getOption('insecure-crawl-fetch') ? false : null,
             'max_pages' => $input->getOption('max-pages'),
+            'artifact_image_format' => $input->getOption('artifact-image-format'),
             'capture_matching_screenshots' => $input->getOption('capture-matching-screenshots'),
             'overwrite' => $input->getOption('overwrite'),
         ];

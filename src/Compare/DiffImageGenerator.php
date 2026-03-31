@@ -7,6 +7,7 @@ namespace LocalVisualDiff\Compare;
 use Imagick;
 use ImagickDraw;
 use ImagickPixel;
+use LocalVisualDiff\Support\ArtifactImageWriter;
 
 /**
  * Write a compact diff image that keeps the baseline context visible while
@@ -14,13 +15,15 @@ use ImagickPixel;
  */
 final class DiffImageGenerator
 {
+    public function __construct(private readonly ArtifactImageWriter $artifactImageWriter = new ArtifactImageWriter())
+    {
+    }
+
     /**
      * @param array<int, array{y:int,startX:int,endX:int}> $changedRuns
      */
     public function generate(Imagick $baselineImage, array $changedRuns, string $outputPath): string
     {
-        $this->ensureDirectoryExists($outputPath);
-
         $image = clone $baselineImage;
         $image->modulateImage(65, 0, 100);
 
@@ -34,22 +37,6 @@ final class DiffImageGenerator
 
         $image->drawImage($draw);
 
-        $image->setImageFormat('png');
-        $image->writeImage($outputPath);
-
-        return $outputPath;
-    }
-
-    private function ensureDirectoryExists(string $outputPath): void
-    {
-        $directory = dirname($outputPath);
-
-        if (is_dir($directory)) {
-            return;
-        }
-
-        if (!mkdir($directory, 0777, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Could not create output directory: %s', $directory));
-        }
+        return $this->artifactImageWriter->writeImage($image, $outputPath);
     }
 }
