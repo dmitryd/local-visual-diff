@@ -15,8 +15,8 @@ Build a local-only PHP 8.3 CLI application that compares two locally hosted vers
 
 ### Phase 2 goal
 
-- crawl the homepage of the baseline site
-- extract same-origin links from that homepage
+- crawl the baseline site recursively starting from the homepage
+- extract same-origin links from every discovered baseline page
 - map each baseline page to the candidate site by path
 - run the same comparison pipeline for each discovered page
 - append all page results to the same static HTML report
@@ -36,7 +36,7 @@ The tool must work against local development URLs and must not depend on externa
 
 ### Planned next scope for phase 2
 
-- one-level crawl of links found on the baseline homepage
+- recursive crawl of same-origin links starting from the baseline homepage
 - same-origin page links only
 - path-based URL mapping from baseline base URL to candidate base URL for discovered paths
 - multi-page reporting using the same comparison pipeline
@@ -44,7 +44,6 @@ The tool must work against local development URLs and must not depend on externa
 ### Out of scope for phase 1
 
 - crawling beyond the homepage itself
-- recursive crawling beyond the homepage link set
 - form interaction and authenticated flows
 - JavaScript-driven navigation flows after page load
 - cross-browser matrix comparison
@@ -123,18 +122,19 @@ The current local PHP build does not include `ext-imagick` or `ext-gd`, so image
 ### Phase 2 flow
 
 1. User runs the same command with crawling enabled.
-2. The tool fetches the baseline homepage HTML.
-3. The tool extracts valid same-origin links from the baseline homepage.
-4. The tool adds the homepage itself to the comparison queue.
-5. The tool normalizes, deduplicates, and sorts the paths.
-6. For each path, it runs the same comparison pipeline already implemented in phase 1.
-7. The tool renders a multi-page static HTML report using Fluid.
+2. The tool seeds the crawl queue with the normalized homepage target `/`.
+3. The tool fetches the current baseline page HTML.
+4. The tool extracts valid same-origin links from that page.
+5. The tool normalizes each discovered target and enqueues only new pages.
+6. The tool continues breadth-first until no new pages remain or `max_pages` is reached.
+7. For each discovered page, it runs the same comparison pipeline already implemented in phase 1.
+8. The tool renders a multi-page static HTML report using Fluid.
 
 ## Crawl Rules
 
 This section applies to phase 2 and later. Phase 1 does not crawl links.
 
-The crawler should operate only on links from the baseline homepage.
+The crawler should operate recursively on links discovered from baseline pages, starting with the baseline homepage.
 
 ### Accept
 
@@ -154,15 +154,31 @@ The crawler should operate only on links from the baseline homepage.
 ### Normalization
 
 - strip URL fragments
-- preserve query strings only if explicitly enabled in a later version
+- preserve query strings by default
+- remove query parameters whose names match the configured ignore regex
+- sort remaining query parameters consistently before deduplication
 - normalize trailing slashes consistently
-- deduplicate paths after normalization
+- deduplicate normalized page targets after normalization
 
-For the first version, query strings should be ignored unless they are part of the base homepage URL itself. This keeps the crawl deterministic and avoids duplicate page variants.
+Rules for query strings:
+
+- query-string variants are separate pages by default
+- ignored query parameters are stripped before deduplication and before fetching
+- if two URLs differ only by ignored query parameters, they collapse into one crawl target
+
+Example with `ignored_query_param_name_pattern = "/^(tx_solr\\[|tx_my\\[)/"`:
+
+- `/search/?tx_solr[q]=123` and `/search/?tx_solr[q]=456` are treated as the same page
+- `/search/?tx_another[q]=123` and `/search/?tx_another[q]=456` are treated as different pages
+
+Trailing slash rules:
+
+- `/about` and `/about/` are the same page
+- normalization should fetch the slash-normalized target, not the first-seen original URL
 
 ## URL Mapping
 
-The URL mapper should compare by path.
+The URL mapper should compare by normalized path plus normalized query string.
 
 Example:
 
@@ -176,6 +192,14 @@ Comparison pair:
 - candidate: `http://upgraded.local/about`
 
 This rule is simple, deterministic, and matches the user requirement.
+
+If the normalized page target includes a query string, the same normalized query string should be applied to both baseline and candidate URLs.
+
+Example:
+
+- normalized page target: `/search/?category=cards&page=2`
+- baseline: `http://legacy.local/search/?category=cards&page=2`
+- candidate: `http://upgraded.local/search/?category=cards&page=2`
 
 ### Base URL normalization
 
@@ -241,6 +265,7 @@ Recommended options:
 - `--shift-tolerance=0`
 - `--color-threshold=0`
 - `--crawl-homepage-links=0`
+- `--ignored-query-param-name-pattern=""`
 - `--max-pages=0`
 - `--capture-matching-screenshots=0`
 - `--overwrite`
@@ -255,7 +280,8 @@ Required positional arguments:
 - `--shift-tolerance=0` means pixel-perfect layout matching.
 - `--shift-tolerance=3` means small local offsets up to 3 pixels should be tolerated.
 - `--crawl-homepage-links=0` means compare only `/`.
-- `--crawl-homepage-links=1` means compare `/` plus same-origin links found on the baseline homepage.
+- `--crawl-homepage-links=1` means recursively compare `/` plus same-origin pages discovered from the baseline crawl.
+- `--ignored-query-param-name-pattern` defines a regular expression for query parameter names that should be stripped before deduplication and fetch.
 - `--max-pages=0` means no explicit page cap after deduplication.
 - `--max-fullpage-height=0` means there is no explicit page-height limit before fallback logic is considered.
 - `--max-fullpage-height=<n>` means pages taller than `n` pixels should switch to the large-page fallback strategy.
@@ -288,6 +314,7 @@ overlay_opacity = 0.5
 
 [crawl]
 crawl_homepage_links = false
+ignored_query_param_name_pattern = ""
 max_pages = 0
 
 [report]
@@ -498,6 +525,7 @@ For each pixel in the candidate image:
 Each crawled page should produce a result record with fields like:
 
 - `path`
+- `normalizedTarget`
 - `baselineUrl`
 - `candidateUrl`
 - `status`

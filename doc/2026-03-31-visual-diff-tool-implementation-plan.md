@@ -4,7 +4,7 @@
 
 **Goal:** Build a local-only PHP 8.3 CLI tool that compares a baseline and candidate website visually, writes image artifacts for changed pages, and generates a static HTML report.
 
-**Architecture:** The tool is a Composer-based PHP CLI application. Symfony Console handles the command-line entry point, `chrome-php/chrome` drives Brave/Chromium locally for rendering, Imagick performs image comparison and artifact generation, and Fluid renders the static report. Phase 1 compares only the homepage, while the internals are designed around a queue of paths so phase 2 can add homepage link crawling without rewriting the comparison pipeline.
+**Architecture:** The tool is a Composer-based PHP CLI application. Symfony Console handles the command-line entry point, `chrome-php/chrome` drives Brave/Chromium locally for rendering, Imagick performs image comparison and artifact generation, and Fluid renders the static report. Phase 1 compares only the homepage, while phase 2 extends the same comparison pipeline with recursive same-origin crawling, normalized query handling, and page deduplication.
 
 **Tech Stack:** PHP 8.3, Composer, Symfony Console, Symfony DomCrawler, Symfony CssSelector, Symfony HttpClient, TYPO3 Fluid, chrome-php/chrome, Imagick, PHPUnit
 
@@ -33,6 +33,7 @@
 - Create: `src/Crawl/UrlNormalizer.php`
 - Create: `src/Crawl/UrlMapper.php`
 - Create: `src/Crawl/LinkExtractor.php`
+- Create: `src/Crawl/RecursivePageCrawler.php`
 - Create: `src/Crawl/PageQueueFactory.php`
 
 ### Browser capture
@@ -76,6 +77,7 @@
 - Create: `tests/Unit/Config/IniConfigurationLoaderTest.php`
 - Create: `tests/Unit/Crawl/UrlNormalizerTest.php`
 - Create: `tests/Unit/Crawl/UrlMapperTest.php`
+- Create: `tests/Unit/Crawl/RecursivePageCrawlerTest.php`
 - Create: `tests/Unit/Crawl/PageQueueFactoryTest.php`
 - Create: `tests/Unit/Browser/BrowserLocatorTest.php`
 - Create: `tests/Unit/Compare/ImageComparatorTest.php`
@@ -726,47 +728,58 @@ git add src/Command/CompareCommand.php src/Run/PageResult.php src/Run/RunSummary
 git commit -m "feat: add homepage comparison workflow"
 ```
 
-## Task 7: Add Phase 2 Homepage Link Crawling
+## Task 7: Add Phase 2 Recursive Crawling
 
 **Files:**
-- Create: `src/Crawl/UrlMapper.php`
-- Create: `src/Crawl/LinkExtractor.php`
+- Modify: `config/defaults.ini`
+- Modify: `src/Config/RunConfiguration.php`
+- Modify: `src/Command/CompareCommand.php`
+- Modify: `src/Crawl/UrlNormalizer.php`
+- Create: `src/Crawl/RecursivePageCrawler.php`
+- Modify: `src/Crawl/UrlMapper.php`
+- Modify: `src/Crawl/LinkExtractor.php`
 - Create: `src/Crawl/PageQueueFactory.php`
+- Modify: `src/Run/ComparisonRunner.php`
 - Test: `tests/Unit/Crawl/UrlMapperTest.php`
+- Test: `tests/Unit/Crawl/RecursivePageCrawlerTest.php`
 - Test: `tests/Unit/Crawl/PageQueueFactoryTest.php`
 - Test: `tests/Integration/CrawlHomepageLinksCommandTest.php`
 
-- [ ] **Step 1: Write failing crawl tests**
+- [ ] **Step 1: Write failing recursive crawl tests**
 
 ```php
-public function testHomepageLinksProduceQueueWithHomepageAndSameOriginPaths(): void
+public function testRecursiveCrawlerTraversesDiscoveredSameOriginPagesBreadthFirst(): void
 {
-    $factory = new PageQueueFactory(new LinkExtractor(), new UrlNormalizer(), new UrlMapper());
+    $crawler = new RecursivePageCrawler(new FixtureLinkExtractor([
+        'http://legacy.local' => '<a href="/about">About</a>',
+        'http://legacy.local/about' => '<a href="/contact?tx_solr[q]=one">Contact</a>',
+        'http://legacy.local/contact' => '<a href="/about/">About again</a>',
+    ]), new UrlMapper(), new UrlNormalizer());
 
-    $paths = $factory->build('http://legacy.local', true, 0);
+    $targets = $crawler->crawl('http://legacy.local', '/^(tx_solr\\[)/', 0);
 
-    self::assertContains('/', $paths);
-    self::assertContains('/about', $paths);
-    self::assertNotContains('https://twitter.com/example', $paths);
+    self::assertSame(['/', '/about', '/contact'], $targets);
 }
 ```
 
 - [ ] **Step 2: Run the crawl tests**
 
-Run: `vendor/bin/phpunit tests/Unit/Crawl/UrlMapperTest.php tests/Unit/Crawl/PageQueueFactoryTest.php tests/Integration/CrawlHomepageLinksCommandTest.php -v`
-Expected: FAIL because crawl services do not exist yet.
+Run: `vendor/bin/phpunit tests/Unit/Crawl/UrlMapperTest.php tests/Unit/Crawl/RecursivePageCrawlerTest.php tests/Unit/Crawl/PageQueueFactoryTest.php tests/Integration/CrawlHomepageLinksCommandTest.php -v`
+Expected: FAIL because recursive traversal, query normalization, and config plumbing are not implemented yet.
 
-- [ ] **Step 3: Implement homepage-only link discovery**
+- [ ] **Step 3: Implement recursive crawling and normalized query handling**
 
 ```php
-final class LinkExtractor
+final class RecursivePageCrawler
 {
     /**
-     * Fetch the baseline homepage HTML and return only same-origin navigational links.
+     * Crawl baseline pages breadth-first, normalize every discovered target,
+     * and return the ordered list of pages that should be compared.
      */
-    public function extract(string $baselineBaseUrl): array
+    public function crawl(string $baselineBaseUrl, string $ignoredQueryParamNamePattern, int $maxPages): array
     {
-        // Use Symfony HttpClient to fetch HTML and DomCrawler to parse anchors.
+        // Seed with `/`, fetch each baseline page, extract links, normalize them,
+        // deduplicate them, and stop when the queue is exhausted or maxPages is hit.
     }
 }
 ```
@@ -774,27 +787,33 @@ final class LinkExtractor
 ```php
 final class PageQueueFactory
 {
-    public function build(string $baselineBaseUrl, bool $crawlHomepageLinks, int $maxPages): array
+    public function build(
+        string $baselineBaseUrl,
+        bool $crawlHomepageLinks,
+        string $ignoredQueryParamNamePattern,
+        int $maxPages
+    ): array
     {
         if ($crawlHomepageLinks === false) {
             return ['/'];
         }
 
-        // Start with `/`, merge normalized homepage links, deduplicate, sort, and apply maxPages.
+        // Delegate recursive traversal to RecursivePageCrawler so queue-building
+        // and crawling stay separate from comparison execution.
     }
 }
 ```
 
 - [ ] **Step 4: Run the crawl tests**
 
-Run: `vendor/bin/phpunit tests/Unit/Crawl/UrlMapperTest.php tests/Unit/Crawl/PageQueueFactoryTest.php tests/Integration/CrawlHomepageLinksCommandTest.php -v`
+Run: `vendor/bin/phpunit tests/Unit/Crawl/UrlMapperTest.php tests/Unit/Crawl/RecursivePageCrawlerTest.php tests/Unit/Crawl/PageQueueFactoryTest.php tests/Integration/CrawlHomepageLinksCommandTest.php -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Crawl/UrlMapper.php src/Crawl/LinkExtractor.php src/Crawl/PageQueueFactory.php tests/Unit/Crawl/UrlMapperTest.php tests/Unit/Crawl/PageQueueFactoryTest.php tests/Integration/CrawlHomepageLinksCommandTest.php
-git commit -m "feat: add homepage link crawling"
+git add config/defaults.ini src/Config/RunConfiguration.php src/Command/CompareCommand.php src/Crawl/UrlNormalizer.php src/Crawl/RecursivePageCrawler.php src/Crawl/UrlMapper.php src/Crawl/LinkExtractor.php src/Crawl/PageQueueFactory.php src/Run/ComparisonRunner.php tests/Unit/Crawl/UrlMapperTest.php tests/Unit/Crawl/RecursivePageCrawlerTest.php tests/Unit/Crawl/PageQueueFactoryTest.php tests/Integration/CrawlHomepageLinksCommandTest.php
+git commit -m "feat: add recursive page crawling"
 ```
 
 ## Task 8: Add Large-Page Fallback And Final Error Handling Rules
