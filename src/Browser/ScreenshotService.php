@@ -21,10 +21,21 @@ use Throwable;
  */
 class ScreenshotService
 {
+    private ?ChromeBrowser $sharedBrowser = null;
+
+    private ?string $sharedBrowserPath = null;
+
+    private ?string $sharedOsFamily = null;
+
     public function __construct(
         private readonly BrowserFactory $browserFactory = new BrowserFactory(),
         private readonly PageStabilizer $pageStabilizer = new PageStabilizer()
     ) {
+    }
+
+    public function __destruct()
+    {
+        $this->closeBrowser();
     }
 
     /**
@@ -42,10 +53,10 @@ class ScreenshotService
         ?string $configuredBrowserPath = null,
         ?string $osFamily = null
     ): PageSnapshot {
-        $browser = null;
+        $page = null;
 
         try {
-            $browser = $this->browserFactory->createBrowser($configuredBrowserPath, $osFamily);
+            $browser = $this->acquireBrowser($configuredBrowserPath, $osFamily);
             $page = $browser->createPage();
 
             $page->setViewport($viewportWidth, $viewportHeight)->await($timeoutMs);
@@ -56,12 +67,7 @@ class ScreenshotService
             $this->pageStabilizer->injectInto($page, $timeoutMs);
             $this->waitMilliseconds($settleMs);
 
-            $finalUrl = $this->readFinalUrl($page, $timeoutMs);
-            $title = $this->readPageTitle($page, $timeoutMs);
-            $httpStatus = $this->readHttpStatus($page, $timeoutMs);
-            $pageHeight = $this->readPageHeight($page, $timeoutMs);
-            $navigatorLanguage = $this->readNavigatorLanguage($page, $timeoutMs);
-            $navigatorLanguages = $this->readNavigatorLanguages($page, $timeoutMs);
+            $pageMetadata = $this->readPageMetadata($page, $timeoutMs);
 
             $page->screenshot([
                 'format' => 'png',
@@ -70,13 +76,13 @@ class ScreenshotService
 
             return new PageSnapshot(
                 $url,
-                $finalUrl,
-                $title,
-                $httpStatus,
+                $pageMetadata['finalUrl'],
+                $pageMetadata['title'],
+                $pageMetadata['httpStatus'],
                 $imagePath,
-                $pageHeight,
-                $navigatorLanguage,
-                $navigatorLanguages
+                $pageMetadata['pageHeight'],
+                $pageMetadata['navigatorLanguage'],
+                $pageMetadata['navigatorLanguages']
             );
         } catch (Throwable $throwable) {
             throw new RuntimeException(
@@ -85,135 +91,113 @@ class ScreenshotService
                 $throwable
             );
         } finally {
-            if ($browser instanceof ChromeBrowser) {
-                $browser->close();
+            if ($page instanceof Page) {
+                $page->close();
             }
         }
     }
 
     /**
-     * @throws CommunicationException
-     * @throws NoResponseAvailable
-     * @throws OperationTimedOut
+     * Reuse one browser process for the whole run.
+     *
+     * Browser startup was the dominant capture cost during profiling. Reusing a
+     * single process keeps captures isolated at the page-tab level while
+     * avoiding repeated cold starts for every baseline/candidate pair.
      */
-    private function readPageTitle(Page $page, int $timeoutMs): string
+    private function acquireBrowser(?string $configuredBrowserPath, ?string $osFamily): ChromeBrowser
     {
-        $evaluation = $page->evaluate('document.title || ""');
-        $title = $evaluation->getReturnValue($timeoutMs);
+        if (
+            $this->sharedBrowser instanceof ChromeBrowser
+            && $this->sharedBrowserPath === $configuredBrowserPath
+            && $this->sharedOsFamily === $osFamily
+        ) {
+            return $this->sharedBrowser;
+        }
 
-        return trim((string) $title);
+        $this->closeBrowser();
+        $this->sharedBrowser = $this->browserFactory->createBrowser($configuredBrowserPath, $osFamily);
+        $this->sharedBrowserPath = $configuredBrowserPath;
+        $this->sharedOsFamily = $osFamily;
+
+        return $this->sharedBrowser;
+    }
+
+    private function closeBrowser(): void
+    {
+        if (!$this->sharedBrowser instanceof ChromeBrowser) {
+            return;
+        }
+
+        $this->sharedBrowser->close();
+        $this->sharedBrowser = null;
+        $this->sharedBrowserPath = null;
+        $this->sharedOsFamily = null;
     }
 
     /**
-     * Read the final browser URL after redirects and client-side navigation.
+     * Read the screenshot metadata in one browser round-trip.
      *
-     * This is different from the requested URL and is the key detail needed to
-     * diagnose language redirects and similar browser-driven routing behavior.
+     * Several small `evaluate` calls add noticeable latency. Pulling the
+     * metadata we need in one script reduces protocol chatter while keeping the
+     * returned data explicit and easy to inspect.
      *
-     * @throws CommunicationException
-     * @throws NoResponseAvailable
-     * @throws OperationTimedOut
-     */
-    private function readFinalUrl(Page $page, int $timeoutMs): string
-    {
-        $evaluation = $page->evaluate('window.location.href || ""');
-        $finalUrl = $evaluation->getReturnValue($timeoutMs);
-
-        return trim((string) $finalUrl);
-    }
-
-    /**
-     * Try to read the HTTP status code from the navigation timing entry.
-     *
-     * If Chrome does not expose the status in the current build, fall back to
-     * 200 so the caller still gets a usable snapshot object.
+     * @return array{
+     *   finalUrl:string,
+     *   title:string,
+     *   httpStatus:int,
+     *   pageHeight:int,
+     *   navigatorLanguage:string,
+     *   navigatorLanguages:array<int,string>
+     * }
      *
      * @throws CommunicationException
      * @throws NoResponseAvailable
      * @throws OperationTimedOut
      */
-    private function readHttpStatus(Page $page, int $timeoutMs): int
+    private function readPageMetadata(Page $page, int $timeoutMs): array
     {
         $evaluation = $page->evaluate(<<<'JS'
 (function () {
     const entries = performance.getEntriesByType('navigation');
     const entry = entries.length > 0 ? entries[entries.length - 1] : null;
-
-    if (entry && typeof entry.responseStatus === 'number') {
-        return entry.responseStatus;
-    }
-
-    return 200;
-})()
-JS);
-
-        $status = $evaluation->getReturnValue($timeoutMs);
-
-        return is_numeric($status) ? (int) $status : 200;
-    }
-
-    /**
-     * Measure the rendered page height so later orchestration can reason about
-     * when a page is too tall for a comfortable single-image review artifact.
-     *
-     * @throws CommunicationException
-     * @throws NoResponseAvailable
-     * @throws OperationTimedOut
-     */
-    private function readPageHeight(Page $page, int $timeoutMs): int
-    {
-        $evaluation = $page->evaluate(<<<'JS'
-(function () {
     const bodyHeight = document.body ? document.body.scrollHeight : 0;
     const documentHeight = document.documentElement ? document.documentElement.scrollHeight : 0;
-    return Math.max(bodyHeight, documentHeight);
+
+    return {
+        finalUrl: window.location.href || '',
+        title: document.title || '',
+        httpStatus: entry && typeof entry.responseStatus === 'number' ? entry.responseStatus : 200,
+        pageHeight: Math.max(bodyHeight, documentHeight),
+        navigatorLanguage: navigator.language || '',
+        navigatorLanguages: Array.isArray(navigator.languages) ? navigator.languages : [],
+    };
 })()
 JS);
 
-        $height = $evaluation->getReturnValue($timeoutMs);
+        $metadata = $evaluation->getReturnValue($timeoutMs);
 
-        return is_numeric($height) ? (int) $height : 0;
-    }
-
-    /**
-     * @throws CommunicationException
-     * @throws NoResponseAvailable
-     * @throws OperationTimedOut
-     */
-    private function readNavigatorLanguage(Page $page, int $timeoutMs): string
-    {
-        $evaluation = $page->evaluate('navigator.language || ""');
-        $language = $evaluation->getReturnValue($timeoutMs);
-
-        return trim((string) $language);
-    }
-
-    /**
-     * @return array<int, string>
-     *
-     * @throws CommunicationException
-     * @throws NoResponseAvailable
-     * @throws OperationTimedOut
-     */
-    private function readNavigatorLanguages(Page $page, int $timeoutMs): array
-    {
-        $evaluation = $page->evaluate(<<<'JS'
-(function () {
-    if (!Array.isArray(navigator.languages)) {
-        return [];
-    }
-
-    return navigator.languages;
-})()
-JS);
-
-        $languages = $evaluation->getReturnValue($timeoutMs);
-
-        if (!is_array($languages)) {
-            return [];
+        if (!is_array($metadata)) {
+            return [
+                'finalUrl' => '',
+                'title' => '',
+                'httpStatus' => 200,
+                'pageHeight' => 0,
+                'navigatorLanguage' => '',
+                'navigatorLanguages' => [],
+            ];
         }
 
-        return array_values(array_map(static fn (mixed $value): string => (string) $value, $languages));
+        return [
+            'finalUrl' => trim((string) ($metadata['finalUrl'] ?? '')),
+            'title' => trim((string) ($metadata['title'] ?? '')),
+            'httpStatus' => is_numeric($metadata['httpStatus'] ?? null) ? (int) $metadata['httpStatus'] : 200,
+            'pageHeight' => is_numeric($metadata['pageHeight'] ?? null) ? (int) $metadata['pageHeight'] : 0,
+            'navigatorLanguage' => trim((string) ($metadata['navigatorLanguage'] ?? '')),
+            'navigatorLanguages' => array_values(array_map(
+                static fn (mixed $value): string => (string) $value,
+                is_array($metadata['navigatorLanguages'] ?? null) ? $metadata['navigatorLanguages'] : []
+            )),
+        ];
     }
 
     private function waitMilliseconds(int $milliseconds): void
