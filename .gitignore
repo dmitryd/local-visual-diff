@@ -1,2 +1,3 @@
 config/local.ini
 var/
+.worktrees/
