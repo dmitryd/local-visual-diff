@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php" cacheDirectory=".phpunit.cache" colors="true" executionOrder="depends,defects" failOnDeprecation="true" failOnNotice="true" failOnRisky="true" failOnWarning="true" beStrictAboutOutputDuringTests="true">
+  <testsuites>
+    <testsuite name="integration">
+      <directory>tests/Integration</directory>
+    </testsuite>
+  </testsuites>
+</phpunit>

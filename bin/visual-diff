@@ -1,0 +1,14 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use LocalVisualDiff\ApplicationFactory;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+// Keep the entrypoint intentionally small: build the console application and
+// hand control to Symfony Console. The command itself will own the behavior.
+$application = ApplicationFactory::create();
+
+exit($application->run());

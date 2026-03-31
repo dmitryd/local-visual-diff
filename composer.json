@@ -1,0 +1,34 @@
+{
+  "name": "local-visual-diff/tool",
+  "description": "Local-only visual diff tool for comparing baseline and candidate websites.",
+  "type": "project",
+  "require": {
+    "php": "^8.3",
+    "ext-curl": "*",
+    "ext-dom": "*",
+    "ext-json": "*",
+    "ext-libxml": "*",
+    "ext-mbstring": "*",
+    "ext-imagick": "*",
+    "symfony/console": "^7.3"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "LocalVisualDiff\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "LocalVisualDiff\\Tests\\": "tests/"
+    }
+  },
+  "bin": [
+    "bin/visual-diff"
+  ],
+  "config": {
+    "sort-packages": true
+  }
+}
