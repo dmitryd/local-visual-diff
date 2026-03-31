@@ -27,6 +27,7 @@ final class IniConfigurationLoaderTest extends TestCase
         $defaultsPath = $this->createTempIni(<<<'INI'
 [browser]
 path = "/defaults/browser"
+accept_language = "de, en"
 viewport_width = 1440
 viewport_height = 900
 settle_ms = 1000
@@ -66,6 +67,7 @@ INI);
         );
 
         self::assertSame('/custom/browser', $config->browserPath);
+        self::assertSame('de, en', $config->acceptLanguage);
         self::assertSame(1440, $config->viewportWidth);
         self::assertSame(900, $config->viewportHeight);
         self::assertSame('var/results', $config->outputDir);

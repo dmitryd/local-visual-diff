@@ -94,6 +94,9 @@ final class IniConfigurationLoader
                 case 'browser_path':
                     $nested['browser']['path'] = $value;
                     break;
+                case 'accept_language':
+                    $nested['browser']['accept_language'] = $value;
+                    break;
                 case 'viewport_width':
                 case 'viewport_height':
                 case 'settle_ms':

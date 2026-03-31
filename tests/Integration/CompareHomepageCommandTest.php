@@ -193,10 +193,11 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
         int $viewportHeight,
         int $timeoutMs,
         int $settleMs,
+        string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
         ?string $osFamily = null
     ): PageSnapshot {
-        unset($viewportWidth, $viewportHeight, $timeoutMs, $settleMs, $configuredBrowserPath, $osFamily);
+        unset($viewportWidth, $viewportHeight, $timeoutMs, $settleMs, $acceptLanguage, $configuredBrowserPath, $osFamily);
 
         $spec = $this->snapshots[$url] ?? null;
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LocalVisualDiff\Browser;
 
 use HeadlessChromium\Browser as ChromeBrowser;
+use HeadlessChromium\Communication\Message;
 use HeadlessChromium\Exception\CommunicationException;
 use HeadlessChromium\Exception\NoResponseAvailable;
 use HeadlessChromium\Exception\OperationTimedOut;
@@ -50,6 +51,7 @@ class ScreenshotService
         int $viewportHeight,
         int $timeoutMs,
         int $settleMs,
+        string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
         ?string $osFamily = null
     ): PageSnapshot {
@@ -58,6 +60,7 @@ class ScreenshotService
         try {
             $browser = $this->acquireBrowser($configuredBrowserPath, $osFamily);
             $page = $browser->createPage();
+            $this->applyLanguagePreferences($page, $acceptLanguage, $timeoutMs);
 
             $page->setViewport($viewportWidth, $viewportHeight)->await($timeoutMs);
 
@@ -120,6 +123,129 @@ class ScreenshotService
         $this->sharedOsFamily = $osFamily;
 
         return $this->sharedBrowser;
+    }
+
+    /**
+     * Configure request headers and browser-exposed locale values before the
+     * first navigation so server-side and client-side language detection use
+     * deterministic inputs.
+     *
+     * @throws CommunicationException
+     */
+    private function applyLanguagePreferences(Page $page, string $acceptLanguage, int $timeoutMs): void
+    {
+        $preferences = $this->normalizeLanguagePreferences($acceptLanguage);
+
+        if ($preferences['header'] === '') {
+            return;
+        }
+
+        $page->setExtraHTTPHeaders([
+            'Accept-Language' => $preferences['header'],
+        ]);
+
+        $localeResponse = $page->getSession()->sendMessageSync(
+            new Message('Emulation.setLocaleOverride', ['locale' => $preferences['primary']]),
+            $timeoutMs
+        );
+
+        if (!$localeResponse->isSuccessful()) {
+            throw new CommunicationException((string) $localeResponse->getErrorMessage());
+        }
+
+        $page->addPreScript($this->languageOverridePreScript(
+            $preferences['primary'],
+            $preferences['languages']
+        ));
+    }
+
+    /**
+     * Convert the configured Accept-Language string into the three values we
+     * need during capture: the actual request header, a primary locale for the
+     * emulation layer, and a simple language list for navigator overrides.
+     *
+     * @return array{header:string, primary:string, languages:array<int,string>}
+     */
+    private function normalizeLanguagePreferences(string $acceptLanguage): array
+    {
+        $header = trim($acceptLanguage);
+
+        if ($header === '') {
+            return [
+                'header' => '',
+                'primary' => '',
+                'languages' => [],
+            ];
+        }
+
+        $parts = array_values(array_filter(array_map(
+            static fn (string $part): string => trim($part),
+            explode(',', $header)
+        ), static fn (string $part): bool => $part !== ''));
+
+        $languages = [];
+
+        foreach ($parts as $part) {
+            $language = trim(explode(';', $part, 2)[0]);
+
+            if ($language === '') {
+                continue;
+            }
+
+            $languages[] = str_replace('_', '-', $language);
+        }
+
+        if ($languages === []) {
+            return [
+                'header' => '',
+                'primary' => '',
+                'languages' => [],
+            ];
+        }
+
+        return [
+            'header' => implode(',', $parts),
+            'primary' => $languages[0],
+            'languages' => $languages,
+        ];
+    }
+
+    /**
+     * Override browser-exposed language properties on every new document.
+     *
+     * TYPO3 language redirects can depend on `navigator.language` or
+     * `navigator.languages` in client-side logic after the initial response.
+     * We therefore override those values as early as possible as part of page
+     * setup, in addition to sending the matching request header.
+     *
+     * @param array<int, string> $languages
+     */
+    private function languageOverridePreScript(string $primaryLanguage, array $languages): string
+    {
+        $primaryLanguageJson = json_encode($primaryLanguage, JSON_THROW_ON_ERROR);
+        $languagesJson = json_encode(array_values($languages), JSON_THROW_ON_ERROR);
+
+        return <<<JS
+(function () {
+    const primaryLanguage = {$primaryLanguageJson};
+    const languages = {$languagesJson};
+
+    try {
+        Object.defineProperty(navigator, 'language', {
+            configurable: true,
+            get: () => primaryLanguage,
+        });
+
+        Object.defineProperty(navigator, 'languages', {
+            configurable: true,
+            get: () => languages,
+        });
+    } catch (error) {
+        // Some browser builds make these properties non-configurable. When that
+        // happens we still keep the request header and locale override in place.
+    }
+})();
+JS;
     }
 
     private function closeBrowser(): void

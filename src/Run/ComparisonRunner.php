@@ -129,6 +129,7 @@ final class ComparisonRunner
                     $configuration->viewportHeight,
                     $configuration->timeoutMs,
                     $configuration->settleMs,
+                    $configuration->acceptLanguage,
                     $configuration->browserPath,
                     PHP_OS_FAMILY
                 )
@@ -142,6 +143,7 @@ final class ComparisonRunner
                     $configuration->viewportHeight,
                     $configuration->timeoutMs,
                     $configuration->settleMs,
+                    $configuration->acceptLanguage,
                     $configuration->browserPath,
                     PHP_OS_FAMILY
                 )

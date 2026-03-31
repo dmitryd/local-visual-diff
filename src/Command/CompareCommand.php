@@ -48,6 +48,7 @@ final class CompareCommand extends Command
             )
             ->addOption('output-dir', null, InputOption::VALUE_REQUIRED, 'Explicit output directory for this run.')
             ->addOption('browser-path', null, InputOption::VALUE_REQUIRED, 'Explicit browser executable path.')
+            ->addOption('accept-language', null, InputOption::VALUE_REQUIRED, 'Accept-Language header and locale preference used during screenshot capture.')
             ->addOption('viewport-width', null, InputOption::VALUE_REQUIRED, 'Viewport width in pixels.')
             ->addOption('viewport-height', null, InputOption::VALUE_REQUIRED, 'Viewport height in pixels.')
             ->addOption('settle-ms', null, InputOption::VALUE_REQUIRED, 'Milliseconds to wait after navigation.')
@@ -86,6 +87,7 @@ final class CompareCommand extends Command
                 candidateBaseUrl: $candidateBaseUrl,
                 outputDir: $finalOutputDir,
                 browserPath: $resolvedBrowserPath,
+                acceptLanguage: $config->acceptLanguage,
                 viewportWidth: $config->viewportWidth,
                 viewportHeight: $config->viewportHeight,
                 settleMs: $config->settleMs,
@@ -128,6 +130,7 @@ final class CompareCommand extends Command
         $overrides = [
             'output_dir' => $input->getOption('output-dir'),
             'browser_path' => $input->getOption('browser-path'),
+            'accept_language' => $input->getOption('accept-language'),
             'viewport_width' => $input->getOption('viewport-width'),
             'viewport_height' => $input->getOption('viewport-height'),
             'settle_ms' => $input->getOption('settle-ms'),
