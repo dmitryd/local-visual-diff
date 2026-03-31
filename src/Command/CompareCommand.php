@@ -96,7 +96,8 @@ final class CompareCommand extends Command
                 crawlHomepageLinks: $config->crawlHomepageLinks,
                 maxPages: $config->maxPages,
                 captureMatchingScreenshots: $config->captureMatchingScreenshots,
-                overwrite: $config->overwrite
+                overwrite: $config->overwrite,
+                verbose: $output->isVerbose()
             );
 
             $summary = $this->runner->run($runConfiguration);

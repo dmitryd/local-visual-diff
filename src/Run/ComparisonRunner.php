@@ -44,6 +44,7 @@ final class ComparisonRunner
 
         $generatedAt = $this->clock->formattedNow();
         $pageResults = [];
+        $this->logVerbose($configuration, sprintf('Comparing %s', '/'));
         $homepageResult = $this->comparePage($configuration, $outputDir, '/');
         $pageResults[] = $homepageResult;
 
@@ -59,6 +60,7 @@ final class ComparisonRunner
                     continue;
                 }
 
+                $this->logVerbose($configuration, sprintf('Comparing %s', $path));
                 $pageResults[] = $this->comparePage($configuration, $outputDir, $path);
             }
         }
@@ -331,5 +333,19 @@ final class ComparisonRunner
         }
 
         return $this->fallbackTitle($path, $baselineUrl, $candidateUrl);
+    }
+
+    /**
+     * Emit lightweight progress messages only when the command is running in
+     * Symfony verbose mode. This keeps default output clean while still giving
+     * visibility into which page is being processed right now.
+     */
+    private function logVerbose(RunConfiguration $configuration, string $message): void
+    {
+        if (!$configuration->verbose) {
+            return;
+        }
+
+        fwrite(STDOUT, $message . PHP_EOL);
     }
 }
