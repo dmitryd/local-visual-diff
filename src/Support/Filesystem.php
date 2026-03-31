@@ -80,6 +80,35 @@ final class Filesystem
         }
     }
 
+    /**
+     * Remove a directory only when it exists and has no remaining entries.
+     *
+     * Page artifact directories are created optimistically before comparison
+     * starts, but matching or failed pages may later remove every generated
+     * file. Cleaning up those empty directories keeps `var/results/.../pages`
+     * focused only on pages that actually retained artifacts.
+     */
+    public function removeDirectoryIfEmpty(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+
+        $entries = scandir($path);
+
+        if (!is_array($entries)) {
+            throw new RuntimeException(sprintf('Could not inspect directory: %s', $path));
+        }
+
+        if ($entries !== ['.', '..']) {
+            return;
+        }
+
+        if (!rmdir($path)) {
+            throw new RuntimeException(sprintf('Could not remove directory: %s', $path));
+        }
+    }
+
     public function relativePath(string $baseDir, string $absolutePath): string
     {
         $baseDir = rtrim($baseDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;

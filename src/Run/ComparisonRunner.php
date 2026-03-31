@@ -151,6 +151,7 @@ final class ComparisonRunner
         } catch (Throwable $throwable) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+            $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
             return new PageResult(
                 $path,
@@ -172,6 +173,7 @@ final class ComparisonRunner
         if ($baselineSnapshot->httpStatus >= 400 || $candidateSnapshot->httpStatus >= 400) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+            $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
             return new PageResult(
                 $path,
@@ -203,6 +205,7 @@ final class ComparisonRunner
         } catch (Throwable $throwable) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+            $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
             return new PageResult(
                 $path,
@@ -234,6 +237,7 @@ final class ComparisonRunner
         if (!$configuration->captureMatchingScreenshots) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+            $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
             return new PageResult(
                 $path,

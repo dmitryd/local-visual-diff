@@ -12,6 +12,7 @@ use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Command\CompareCommand;
 use LocalVisualDiff\Run\ComparisonRunner;
 use LocalVisualDiff\Support\Clock;
+use LocalVisualDiff\Support\Slugger;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -24,6 +25,13 @@ use Symfony\Component\Console\Tester\CommandTester;
  */
 final class CompareHomepageCommandTest extends TestCase
 {
+    private readonly Slugger $slugger;
+
+    protected function setUp(): void
+    {
+        $this->slugger = new Slugger();
+    }
+
     public function testItCreatesATimestampedReportDirectoryForHomepageComparison(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
@@ -63,6 +71,7 @@ final class CompareHomepageCommandTest extends TestCase
             self::assertSame(1, $report['summary']['totalPages']);
             self::assertSame(1, $report['summary']['matchingPages']);
             self::assertSame(['matching'], array_map(static fn (array $row): string => $row['status'], $report['results']));
+            self::assertDirectoryDoesNotExist($outputDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . $this->slugger->slugPath('/'));
 
             $html = file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.html');
             self::assertIsString($html);
