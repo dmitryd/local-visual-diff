@@ -46,7 +46,9 @@ final class ImageComparator
         $normalizedBaseline = $this->normalizeCanvas($baselineImage, $width, $height);
         $normalizedCandidate = $this->normalizeCanvas($candidateImage, $width, $height);
 
-        $comparison = $this->comparePixels($normalizedBaseline, $normalizedCandidate, $shiftTolerance, $colorThreshold);
+        $comparison = $shiftTolerance === 0
+            ? $this->comparePixelsExactly($normalizedBaseline, $normalizedCandidate, $colorThreshold)
+            : $this->comparePixelsWithTolerance($normalizedBaseline, $normalizedCandidate, $shiftTolerance, $colorThreshold);
         $changedPixels = $comparison['changedPixels'];
         $changedRuns = $comparison['changedRuns'];
         $pixelCount = $width * $height;
@@ -78,7 +80,62 @@ final class ImageComparator
     /**
      * @return array{changedPixels:int, changedRuns: array<int, array{y:int,startX:int,endX:int}>}
      */
-    private function comparePixels(
+    private function comparePixelsExactly(
+        Imagick $baselineImage,
+        Imagick $candidateImage,
+        int $colorThreshold
+    ): array {
+        if ($colorThreshold === 0 && $baselineImage->getImageSignature() === $candidateImage->getImageSignature()) {
+            return [
+                'changedPixels' => 0,
+                'changedRuns' => [],
+            ];
+        }
+
+        $width = $baselineImage->getImageWidth();
+        $height = $baselineImage->getImageHeight();
+        $changedRuns = [];
+        $changedPixels = 0;
+
+        for ($y = 0; $y < $height; $y++) {
+            $baselineRow = $this->exportRowPixels($baselineImage, $width, $y);
+            $candidateRow = $this->exportRowPixels($candidateImage, $width, $y);
+            $runStartX = null;
+
+            for ($x = 0; $x < $width; $x++) {
+                if ($this->pixelsMatchAtSamePosition($baselineRow, $candidateRow, $x, $colorThreshold)) {
+                    if ($runStartX !== null) {
+                        $changedRuns[] = [
+                            'y' => $y,
+                            'startX' => $runStartX,
+                            'endX' => $x - 1,
+                        ];
+                        $runStartX = null;
+                    }
+
+                    continue;
+                }
+
+                $changedPixels++;
+                $runStartX ??= $x;
+            }
+
+            if ($runStartX !== null) {
+                $changedRuns[] = [
+                    'y' => $y,
+                    'startX' => $runStartX,
+                    'endX' => $width - 1,
+                ];
+            }
+        }
+
+        return [
+            'changedPixels' => $changedPixels,
+            'changedRuns' => $changedRuns,
+        ];
+    }
+
+    private function comparePixelsWithTolerance(
         Imagick $baselineImage,
         Imagick $candidateImage,
         int $shiftTolerance,
