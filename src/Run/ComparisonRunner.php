@@ -20,9 +20,9 @@ use Throwable;
 /**
  * Orchestrate one visual comparison run.
  *
- * For the first milestone the runner compares only the homepage. The rest of
- * the architecture is intentionally built around page-result objects so later
- * crawling can reuse the same execution path.
+ * The runner executes one comparison pipeline per normalized page target. That
+ * lets homepage-only runs and recursive crawl runs share the same comparison,
+ * artifact, and reporting code.
  */
 final class ComparisonRunner
 {
@@ -56,6 +56,7 @@ final class ComparisonRunner
                 fn (): array => $this->pageQueueFactory->build(
                     $configuration->baselineBaseUrl,
                     true,
+                    $configuration->ignoredQueryParamNamePattern,
                     $configuration->maxPages
                 )
             );
@@ -90,8 +91,8 @@ final class ComparisonRunner
     }
 
     /**
-     * Compare the homepage only. Later work can expand the queue, but the
-     * actual per-page pipeline stays identical.
+     * Decide whether the run should expand from the homepage result into the
+     * crawl queue.
      */
     private function shouldCrawlAdditionalPages(RunConfiguration $configuration, PageResult $homepageResult): bool
     {

@@ -108,6 +108,7 @@ final class IniConfigurationLoader
                     $nested['compare'][$key] = $value;
                     break;
                 case 'crawl_homepage_links':
+                case 'ignored_query_param_name_pattern':
                 case 'max_pages':
                     $nested['crawl'][$key] = $value;
                     break;

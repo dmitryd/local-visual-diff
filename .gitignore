@@ -1,3 +1,5 @@
 config/local.ini
 var/
 .worktrees/
+vendor/
+.phpunit.cache/

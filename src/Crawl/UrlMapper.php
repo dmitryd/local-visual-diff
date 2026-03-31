@@ -5,96 +5,104 @@ declare(strict_types=1);
 namespace LocalVisualDiff\Crawl;
 
 /**
- * Convert crawl-time URLs into normalized comparison paths.
+ * Convert crawl-time links into normalized comparison targets.
  *
- * This class keeps the crawl rules in one place:
- * - accept only http/https URLs that belong to the same origin as the
- *   baseline homepage
- * - ignore fragments and query strings for the first version
- * - normalize paths so `/about/`, `about`, and `/about#team` all become
- *   the same canonical path
+ * A "target" is the canonical path-plus-query string that identifies one page
+ * in the crawl queue. The mapper owns the crawl rules so the rest of the code
+ * can work with already-normalized targets:
+ * - only same-origin http/https links are accepted
+ * - obvious asset URLs are rejected
+ * - fragments are ignored
+ * - query-string variants are preserved unless their parameter names match the
+ *   configured ignore pattern
+ * - trailing slashes and dot segments are collapsed into one canonical target
  */
 final class UrlMapper
 {
     /**
-     * Normalize a base URL by trimming whitespace and dropping a trailing slash.
+     * Resolve a raw href discovered on the current baseline page into a single
+     * normalized crawl target.
      */
-    public function normalizeBaseUrl(string $url): string
-    {
-        $trimmed = trim($url);
-
-        return rtrim($trimmed, '/');
-    }
-
-    /**
-     * Normalize a path so the crawl queue can deduplicate equivalent entries.
-     */
-    public function normalizePath(string $path): string
-    {
-        $path = trim($path);
-
-        if ($path === '') {
-            return '/';
-        }
-
-        $path = $this->stripQueryAndFragment($path);
-
-        if (!str_starts_with($path, '/')) {
-            $path = '/' . $path;
-        }
-
-        $path = $this->collapseDotSegments($path);
-        $path = preg_replace('#/+#', '/', $path) ?: '/';
-
-        if ($path !== '/') {
-            $path = rtrim($path, '/');
-        }
-
-        return $path === '' ? '/' : $path;
-    }
-
-    /**
-     * Turn a raw href into a normalized path or return null if it should not
-     * be crawled.
-     */
-    public function toPath(string $baselineBaseUrl, string $href): ?string
-    {
+    public function toTarget(
+        string $baselineBaseUrl,
+        string $currentPageUrl,
+        string $href,
+        string $ignoredQueryParamNamePattern = ''
+    ): ?string {
         $href = trim($href);
 
         if ($href === '' || $this->isIgnoredScheme($href) || str_starts_with($href, '#')) {
             return null;
         }
 
-        $resolvedUrl = $this->resolveUrl($baselineBaseUrl, $href);
+        $resolvedUrl = $this->resolveUrl($currentPageUrl, $href);
 
         if ($resolvedUrl === null || !$this->isSameOrigin($baselineBaseUrl, $resolvedUrl)) {
             return null;
         }
 
-        $path = parse_url($resolvedUrl, PHP_URL_PATH);
-        $path = is_string($path) ? $path : '/';
+        $parts = parse_url($this->stripFragment($resolvedUrl));
+
+        if (!is_array($parts)) {
+            return null;
+        }
+
+        $path = isset($parts['path']) && is_string($parts['path']) ? $parts['path'] : '/';
 
         if ($this->isIgnoredAssetPath($path)) {
             return null;
         }
 
-        return $this->normalizePath($path);
+        $query = isset($parts['query']) && is_string($parts['query']) ? $parts['query'] : null;
+
+        return $this->normalizeTargetFromParts($path, $query, $ignoredQueryParamNamePattern);
     }
 
     /**
-     * Resolve a href against a baseline URL.
+     * Normalize a target string that may already contain a query string.
      */
-    public function resolveUrl(string $baselineBaseUrl, string $href): ?string
+    public function normalizeTarget(string $target, string $ignoredQueryParamNamePattern = ''): string
     {
-        $href = trim($href);
+        $target = trim($target);
 
-        if ($href === '') {
-            return null;
+        if ($target === '') {
+            return '/';
         }
 
-        $href = $this->stripFragment($href);
+        $parts = parse_url($this->stripFragment($target));
 
-        if ($this->isIgnoredScheme($href)) {
+        if (!is_array($parts)) {
+            return '/';
+        }
+
+        $path = isset($parts['path']) && is_string($parts['path']) ? $parts['path'] : '/';
+        $query = isset($parts['query']) && is_string($parts['query']) ? $parts['query'] : null;
+
+        return $this->normalizeTargetFromParts($path, $query, $ignoredQueryParamNamePattern);
+    }
+
+    /**
+     * Build a fetchable absolute URL for one normalized target.
+     */
+    public function joinBaseUrlAndTarget(string $baseUrl, string $target): string
+    {
+        return $target === '/'
+            ? rtrim($baseUrl, '/')
+            : rtrim($baseUrl, '/') . $target;
+    }
+
+    /**
+     * Resolve a href against the current page URL.
+     *
+     * Recursive crawling cannot resolve every link against the site root,
+     * because relative links on nested pages should be interpreted relative to
+     * the current document location.
+     */
+    public function resolveUrl(string $currentPageUrl, string $href): ?string
+    {
+        $href = trim($this->stripFragment($href));
+
+        if ($href === '' || $this->isIgnoredScheme($href)) {
             return null;
         }
 
@@ -102,7 +110,7 @@ final class UrlMapper
             return $href;
         }
 
-        $baseParts = parse_url($baselineBaseUrl);
+        $baseParts = parse_url($currentPageUrl);
 
         if (!is_array($baseParts) || empty($baseParts['scheme']) || empty($baseParts['host'])) {
             return null;
@@ -119,6 +127,14 @@ final class UrlMapper
             return $scheme . '://' . $authority . $href;
         }
 
+        if (str_starts_with($href, '?')) {
+            $currentPath = isset($baseParts['path']) && is_string($baseParts['path'])
+                ? $baseParts['path']
+                : '/';
+
+            return $scheme . '://' . $authority . $this->collapseDotSegments('/' . ltrim($currentPath, '/')) . $href;
+        }
+
         $basePath = $baseParts['path'] ?? '/';
         $directory = $this->baseDirectory((string) $basePath);
         $combinedPath = $this->normalizeRelativePath($directory . $href);
@@ -127,7 +143,7 @@ final class UrlMapper
     }
 
     /**
-     * Decide whether a url belongs to the same origin as the baseline site.
+     * Decide whether a URL belongs to the same origin as the baseline site.
      */
     public function isSameOrigin(string $baselineBaseUrl, string $url): bool
     {
@@ -153,6 +169,115 @@ final class UrlMapper
             && $baselinePort === $urlPort;
     }
 
+    /**
+     * Normalize path and query components into a canonical crawl target.
+     */
+    private function normalizeTargetFromParts(
+        string $path,
+        ?string $query,
+        string $ignoredQueryParamNamePattern
+    ): string {
+        $path = trim($path);
+
+        if ($path === '') {
+            $path = '/';
+        }
+
+        if (!str_starts_with($path, '/')) {
+            $path = '/' . $path;
+        }
+
+        $path = $this->collapseDotSegments($path);
+        $path = preg_replace('#/+#', '/', $path) ?: '/';
+
+        if ($path !== '/') {
+            $path = rtrim($path, '/');
+        }
+
+        $normalizedQuery = $this->normalizeQueryString($query, $ignoredQueryParamNamePattern);
+
+        if ($normalizedQuery === '') {
+            return $path === '' ? '/' : $path;
+        }
+
+        return ($path === '' ? '/' : $path) . '?' . $normalizedQuery;
+    }
+
+    /**
+     * Normalize and sort query-string parameters while optionally ignoring
+     * machine-generated parameter namespaces configured by the user.
+     */
+    private function normalizeQueryString(?string $query, string $ignoredQueryParamNamePattern): string
+    {
+        if ($query === null || $query === '') {
+            return '';
+        }
+
+        $pairs = [];
+
+        foreach (explode('&', $query) as $rawPair) {
+            if ($rawPair === '') {
+                continue;
+            }
+
+            $hasEquals = str_contains($rawPair, '=');
+            [$rawName, $rawValue] = array_pad(explode('=', $rawPair, 2), 2, '');
+            $name = urldecode($rawName);
+
+            if ($name === '' || $this->shouldIgnoreParameterName($name, $ignoredQueryParamNamePattern)) {
+                continue;
+            }
+
+            $pairs[] = [
+                'name' => $name,
+                'value' => urldecode($rawValue),
+                'hasValue' => $hasEquals,
+            ];
+        }
+
+        usort(
+            $pairs,
+            static function (array $left, array $right): int {
+                $nameOrder = strcmp($left['name'], $right['name']);
+
+                if ($nameOrder !== 0) {
+                    return $nameOrder;
+                }
+
+                return strcmp($left['value'], $right['value']);
+            }
+        );
+
+        $normalizedPairs = [];
+
+        foreach ($pairs as $pair) {
+            $encodedName = $this->encodeQueryName($pair['name']);
+
+            if ($pair['hasValue']) {
+                $normalizedPairs[] = $encodedName . '=' . rawurlencode($pair['value']);
+                continue;
+            }
+
+            $normalizedPairs[] = $encodedName;
+        }
+
+        return implode('&', $normalizedPairs);
+    }
+
+    private function shouldIgnoreParameterName(string $name, string $ignoredQueryParamNamePattern): bool
+    {
+        if ($ignoredQueryParamNamePattern === '') {
+            return false;
+        }
+
+        return preg_match($ignoredQueryParamNamePattern, $name) === 1;
+    }
+
+    private function encodeQueryName(string $name): string
+    {
+        return str_replace(['%5B', '%5D'], ['[', ']'], rawurlencode($name));
+    }
+
     private function isIgnoredScheme(string $href): bool
     {
         $lower = strtolower($href);
@@ -164,7 +289,7 @@ final class UrlMapper
 
     private function isIgnoredAssetPath(string $path): bool
     {
-        $lowerPath = strtolower($this->stripQueryAndFragment($path));
+        $lowerPath = strtolower($path);
         $extension = pathinfo($lowerPath, PATHINFO_EXTENSION);
 
         if ($extension === '') {
@@ -209,18 +334,6 @@ final class UrlMapper
         return substr($url, 0, $hashPosition);
     }
 
-    private function stripQueryAndFragment(string $path): string
-    {
-        $path = $this->stripFragment($path);
-        $queryPosition = strpos($path, '?');
-
-        if ($queryPosition === false) {
-            return $path;
-        }
-
-        return substr($path, 0, $queryPosition);
-    }
-
     private function buildAuthority(array $parts): string
     {
         $authority = (string) $parts['host'];
@@ -238,53 +351,53 @@ final class UrlMapper
             return (string) $parts['port'];
         }
 
-        return $scheme === 'https' ? '443' : '80';
+        return match ($scheme) {
+            'https' => '443',
+            'http' => '80',
+            default => '',
+        };
     }
 
     private function baseDirectory(string $path): string
     {
-        if ($path === '') {
+        $pathWithoutQuery = strtok($path, '?');
+        $pathWithoutQuery = is_string($pathWithoutQuery) && $pathWithoutQuery !== '' ? $pathWithoutQuery : '/';
+
+        if (str_ends_with($pathWithoutQuery, '/')) {
+            return $pathWithoutQuery;
+        }
+
+        $lastSlash = strrpos($pathWithoutQuery, '/');
+
+        if ($lastSlash === false) {
             return '/';
         }
 
-        if (str_ends_with($path, '/')) {
-            return $path;
-        }
-
-        $directory = dirname($path);
-
-        if ($directory === '.' || $directory === DIRECTORY_SEPARATOR) {
-            return '/';
-        }
-
-        return rtrim($directory, '/') . '/';
+        return substr($pathWithoutQuery, 0, $lastSlash + 1);
     }
 
     private function normalizeRelativePath(string $path): string
     {
-        $segments = explode('/', $path);
-        $stack = [];
+        $query = '';
+        $questionMark = strpos($path, '?');
 
-        foreach ($segments as $segment) {
-            if ($segment === '' || $segment === '.') {
-                continue;
-            }
-
-            if ($segment === '..') {
-                array_pop($stack);
-                continue;
-            }
-
-            $stack[] = $segment;
+        if ($questionMark !== false) {
+            $query = substr($path, $questionMark);
+            $path = substr($path, 0, $questionMark);
         }
 
-        return '/' . implode('/', $stack);
+        $normalizedPath = $this->collapseDotSegments('/' . ltrim($path, '/'));
+
+        return $normalizedPath . $query;
     }
 
+    /**
+     * Resolve `.` and `..` segments without consulting the filesystem.
+     */
     private function collapseDotSegments(string $path): string
     {
         $segments = explode('/', $path);
-        $stack = [];
+        $collapsed = [];
 
         foreach ($segments as $segment) {
             if ($segment === '' || $segment === '.') {
@@ -292,15 +405,13 @@ final class UrlMapper
             }
 
             if ($segment === '..') {
-                array_pop($stack);
+                array_pop($collapsed);
                 continue;
             }
 
-            $stack[] = $segment;
+            $collapsed[] = $segment;
         }
 
-        $normalized = '/' . implode('/', $stack);
-
-        return $normalized === '' ? '/' : $normalized;
+        return '/' . implode('/', $collapsed);
     }
 }

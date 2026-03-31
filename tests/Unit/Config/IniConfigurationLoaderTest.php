@@ -41,6 +41,7 @@ overlay_opacity = 0.5
 
 [crawl]
 crawl_homepage_links = false
+ignored_query_param_name_pattern = ""
 max_pages = 0
 
 [report]
@@ -67,7 +68,23 @@ INI);
         self::assertSame(1440, $config->viewportWidth);
         self::assertSame(900, $config->viewportHeight);
         self::assertSame('var/results', $config->outputDir);
+        self::assertSame('', $config->ignoredQueryParamNamePattern);
         self::assertFalse($config->captureMatchingScreenshots);
+    }
+
+    public function testInvalidIgnoredQueryPatternFailsEarly(): void
+    {
+        $defaultsPath = $this->createTempIni(<<<'INI'
+[crawl]
+ignored_query_param_name_pattern = "/(/"
+INI);
+
+        $loader = new IniConfigurationLoader();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Invalid ignored query parameter name pattern');
+
+        $loader->load($defaultsPath);
     }
 
     private function createTempIni(string $contents): string

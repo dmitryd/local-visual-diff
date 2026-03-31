@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace LocalVisualDiff\Config;
 
+use RuntimeException;
+
 /**
  * Immutable runtime settings for one comparison run.
  *
@@ -29,6 +31,7 @@ final class RunConfiguration
         public readonly int $colorThreshold = 0,
         public readonly float $overlayOpacity = 0.5,
         public readonly bool $crawlHomepageLinks = false,
+        public readonly string $ignoredQueryParamNamePattern = '',
         public readonly int $maxPages = 0,
         public readonly bool $captureMatchingScreenshots = false,
         public readonly bool $overwrite = false,
@@ -65,6 +68,7 @@ final class RunConfiguration
             colorThreshold: self::intValue($settings, ['compare', 'color_threshold'], 0),
             overlayOpacity: self::floatValue($settings, ['compare', 'overlay_opacity'], 0.5),
             crawlHomepageLinks: self::boolValue($settings, ['crawl', 'crawl_homepage_links'], false),
+            ignoredQueryParamNamePattern: self::regexValue($settings, ['crawl', 'ignored_query_param_name_pattern'], ''),
             maxPages: self::intValue($settings, ['crawl', 'max_pages'], 0),
             captureMatchingScreenshots: self::boolValue($settings, ['run', 'capture_matching_screenshots'], false),
             overwrite: self::boolValue($settings, ['run', 'overwrite'], false)
@@ -117,6 +121,28 @@ final class RunConfiguration
         }
 
         return (bool) $value;
+    }
+
+    /**
+     * Read a regex string and validate that PHP can compile it.
+     *
+     * The crawler depends on this pattern while normalizing URLs. Validating it
+     * here keeps configuration failures obvious and early, instead of surfacing
+     * later in the middle of a crawl run.
+     */
+    private static function regexValue(array $settings, array $path, string $default): string
+    {
+        $value = self::stringValue($settings, $path, $default) ?? $default;
+
+        if ($value === '') {
+            return '';
+        }
+
+        if (@preg_match($value, '') === false) {
+            throw new RuntimeException(sprintf('Invalid ignored query parameter name pattern: %s', $value));
+        }
+
+        return $value;
     }
 
     /**

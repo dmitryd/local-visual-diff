@@ -12,6 +12,7 @@ use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Command\CompareCommand;
 use LocalVisualDiff\Crawl\LinkExtractor;
 use LocalVisualDiff\Crawl\PageQueueFactory;
+use LocalVisualDiff\Crawl\RecursivePageCrawler;
 use LocalVisualDiff\Crawl\UrlMapper;
 use LocalVisualDiff\Crawl\UrlNormalizer;
 use LocalVisualDiff\Run\ComparisonRunner;
@@ -21,28 +22,38 @@ use RuntimeException;
 use Symfony\Component\Console\Tester\CommandTester;
 
 /**
- * Exercise the crawl queue through the real command so the queue, runner, and
- * report all agree on which pages were discovered from the baseline homepage.
+ * Exercise recursive crawl discovery through the real command so the crawler,
+ * runner, and report all agree on which baseline pages were discovered.
  */
 final class CrawlHomepageLinksCommandTest extends TestCase
 {
-    public function testCrawlEnabledCommandProcessesHomepageAndDiscoveredLinks(): void
+    public function testCrawlEnabledCommandProcessesRecursiveDiscoveredLinks(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
         $this->removeDirectoryIfExists($outputDir);
 
         try {
             $command = $this->buildCommand(
-                <<<'HTML'
+                [
+                    'http://legacy.local' => <<<'HTML'
 <!doctype html>
 <html>
   <body>
     <a href="about">About</a>
-    <a href="contact">Contact</a>
     <a href="https://twitter.com/example">Twitter</a>
   </body>
 </html>
 HTML,
+                    'http://legacy.local/about' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/contact">Contact</a>
+  </body>
+</html>
+HTML,
+                    'http://legacy.local/contact' => '<!doctype html><html><body></body></html>',
+                ],
                 [
                     'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
                     'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
@@ -79,6 +90,51 @@ HTML,
         }
     }
 
+    public function testIgnoredQueryParamPatternDeduplicatesRecursiveTargets(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/search/?tx_solr[q]=one&category=cards">Search one</a>
+    <a href="/search/?tx_solr[q]=two&category=cards">Search two</a>
+  </body>
+</html>
+HTML,
+                    'http://legacy.local/search?category=cards' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://legacy.local/search?category=cards' => ['title' => 'Search', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/search?category=cards' => ['title' => 'Search', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--crawl-homepage-links' => true,
+                '--ignored-query-param-name-pattern' => '/^tx_solr\\[/',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(2, $report['summary']['totalPages']);
+            self::assertSame(['/', '/search?category=cards'], array_column($report['results'], 'path'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testBaselineHomepageHttpErrorStopsPageDiscovery(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
@@ -86,7 +142,8 @@ HTML,
 
         try {
             $command = $this->buildCommand(
-                <<<'HTML'
+                [
+                    'http://legacy.local' => <<<'HTML'
 <!doctype html>
 <html>
   <body>
@@ -95,6 +152,7 @@ HTML,
   </body>
 </html>
 HTML,
+                ],
                 [
                     'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 500, 'pageHeight' => 600],
                     'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
@@ -129,14 +187,18 @@ HTML,
     }
 
     /**
+     * @param array<string, string>              $htmlByUrl
      * @param array<string, array<string, mixed>> $snapshots
      */
-    private function buildCommand(string $homepageHtml, array $snapshots): CompareCommand
+    private function buildCommand(array $htmlByUrl, array $snapshots): CompareCommand
     {
         $pageQueueFactory = new PageQueueFactory(
-            new FixtureLinkExtractor($homepageHtml),
-            new UrlNormalizer(),
-            new UrlMapper()
+            new RecursivePageCrawler(
+                new FixtureLinkExtractor($htmlByUrl),
+                new UrlMapper(),
+                new UrlNormalizer()
+            ),
+            new UrlNormalizer()
         );
 
         return new CompareCommand(
@@ -184,15 +246,20 @@ HTML,
 
 final class FixtureLinkExtractor extends LinkExtractor
 {
-    public function __construct(private readonly string $html)
+    /**
+     * @param array<string, string> $htmlByUrl
+     */
+    public function __construct(private readonly array $htmlByUrl)
     {
     }
 
-    protected function fetchHomepageHtml(string $baselineBaseUrl): string
+    protected function fetchHtml(string $pageUrl): string
     {
-        unset($baselineBaseUrl);
+        if (!array_key_exists($pageUrl, $this->htmlByUrl)) {
+            throw new RuntimeException(sprintf('No fixture HTML configured for %s', $pageUrl));
+        }
 
-        return $this->html;
+        return $this->htmlByUrl[$pageUrl];
     }
 }
 
