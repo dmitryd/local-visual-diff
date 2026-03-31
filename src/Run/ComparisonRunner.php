@@ -1,0 +1,308 @@
+<?php
+
+declare(strict_types=1);
+
+namespace LocalVisualDiff\Run;
+
+use LocalVisualDiff\Browser\ScreenshotService;
+use LocalVisualDiff\Compare\ImageComparator;
+use LocalVisualDiff\Config\RunConfiguration;
+use LocalVisualDiff\Report\ReportRenderer;
+use LocalVisualDiff\Report\ReportViewModelFactory;
+use LocalVisualDiff\Support\Clock;
+use LocalVisualDiff\Support\Filesystem;
+use LocalVisualDiff\Support\Slugger;
+use RuntimeException;
+use Throwable;
+
+/**
+ * Orchestrate one visual comparison run.
+ *
+ * For the first milestone the runner compares only the homepage. The rest of
+ * the architecture is intentionally built around page-result objects so later
+ * crawling can reuse the same execution path.
+ */
+final class ComparisonRunner
+{
+    public function __construct(
+        private readonly ScreenshotService $screenshotService = new ScreenshotService(),
+        private readonly ImageComparator $imageComparator = new ImageComparator(),
+        private readonly ReportViewModelFactory $reportViewModelFactory = new ReportViewModelFactory(),
+        private readonly ReportRenderer $reportRenderer = new ReportRenderer(),
+        private readonly Filesystem $filesystem = new Filesystem(),
+        private readonly Slugger $slugger = new Slugger(),
+        private readonly Clock $clock = new Clock()
+    ) {
+    }
+
+    public function run(RunConfiguration $configuration): RunSummary
+    {
+        $outputDir = $this->resolveOutputDirectory($configuration->outputDir);
+        $this->filesystem->ensureDirectory($outputDir);
+
+        $generatedAt = $this->clock->formattedNow();
+        $pageResults = [
+            $this->compareHomepage($configuration, $outputDir),
+        ];
+
+        $reportPath = $this->filesystem->joinPath($outputDir, 'report.html');
+        $reportJsonPath = $this->filesystem->joinPath($outputDir, 'report.json');
+        $summary = $this->buildSummary($configuration, $generatedAt, $outputDir, $reportPath, $reportJsonPath, $pageResults);
+
+        $viewModel = $this->reportViewModelFactory->create(
+            $summary->toArray(),
+            array_map(static fn (PageResult $pageResult): array => $pageResult->toArray(), $pageResults)
+        );
+
+        $this->filesystem->writeFile($reportPath, $this->reportRenderer->render($viewModel));
+        $this->filesystem->writeJson($reportJsonPath, [
+            'summary' => $summary->toArray(),
+            'results' => array_map(static fn (PageResult $pageResult): array => $pageResult->toArray(), $pageResults),
+        ]);
+
+        return $summary;
+    }
+
+    /**
+     * Compare the homepage only. Later work can expand the queue, but the
+     * actual per-page pipeline stays identical.
+     */
+    private function compareHomepage(RunConfiguration $configuration, string $outputDir): PageResult
+    {
+        $path = '/';
+        $pageSlug = $this->slugger->slugPath($path);
+        $pageDir = $this->filesystem->joinPath($outputDir, 'pages', $pageSlug);
+        $this->filesystem->ensureDirectory($pageDir);
+
+        $baselineUrl = $this->joinBaseUrlAndPath($configuration->baselineBaseUrl, $path);
+        $candidateUrl = $this->joinBaseUrlAndPath($configuration->candidateBaseUrl, $path);
+        $baselineScreenshotPath = $this->filesystem->joinPath($pageDir, 'baseline.png');
+        $candidateScreenshotPath = $this->filesystem->joinPath($pageDir, 'candidate.png');
+
+        try {
+            $baselineSnapshot = $this->screenshotService->capture(
+                $baselineUrl,
+                $baselineScreenshotPath,
+                $configuration->viewportWidth,
+                $configuration->viewportHeight,
+                $configuration->timeoutMs,
+                $configuration->settleMs,
+                $configuration->browserPath,
+                PHP_OS_FAMILY
+            );
+            $candidateSnapshot = $this->screenshotService->capture(
+                $candidateUrl,
+                $candidateScreenshotPath,
+                $configuration->viewportWidth,
+                $configuration->viewportHeight,
+                $configuration->timeoutMs,
+                $configuration->settleMs,
+                $configuration->browserPath,
+                PHP_OS_FAMILY
+            );
+        } catch (Throwable $throwable) {
+            $this->filesystem->removeFileIfExists($baselineScreenshotPath);
+            $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+
+            return new PageResult(
+                $path,
+                $this->fallbackTitle($path, $baselineUrl, $candidateUrl),
+                'runtime_error',
+                $baselineUrl,
+                $candidateUrl,
+                0,
+                0,
+                []
+            );
+        }
+
+        $title = $this->bestTitle($baselineSnapshot->title, $candidateSnapshot->title, $path, $baselineUrl, $candidateUrl);
+
+        if ($baselineSnapshot->httpStatus >= 400 || $candidateSnapshot->httpStatus >= 400) {
+            $this->filesystem->removeFileIfExists($baselineScreenshotPath);
+            $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+
+            return new PageResult(
+                $path,
+                $title,
+                'http_error',
+                $baselineUrl,
+                $candidateUrl,
+                $baselineSnapshot->httpStatus,
+                $candidateSnapshot->httpStatus,
+                []
+            );
+        }
+
+        try {
+            $comparison = $this->imageComparator->compare(
+                $baselineScreenshotPath,
+                $candidateScreenshotPath,
+                $configuration->shiftTolerance,
+                $configuration->colorThreshold,
+                $pageDir
+            );
+        } catch (Throwable $throwable) {
+            $this->filesystem->removeFileIfExists($baselineScreenshotPath);
+            $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+
+            return new PageResult(
+                $path,
+                $title,
+                'runtime_error',
+                $baselineUrl,
+                $candidateUrl,
+                $baselineSnapshot->httpStatus,
+                $candidateSnapshot->httpStatus,
+                []
+            );
+        }
+
+        $artifacts = $this->relativeArtifacts($outputDir, $comparison->artifacts);
+
+        if ($comparison->hasDiff) {
+            return new PageResult(
+                $path,
+                $title,
+                'different',
+                $baselineUrl,
+                $candidateUrl,
+                $baselineSnapshot->httpStatus,
+                $candidateSnapshot->httpStatus,
+                $artifacts
+            );
+        }
+
+        if (!$configuration->captureMatchingScreenshots) {
+            $this->filesystem->removeFileIfExists($baselineScreenshotPath);
+            $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+
+            return new PageResult(
+                $path,
+                $title,
+                'matching',
+                $baselineUrl,
+                $candidateUrl,
+                $baselineSnapshot->httpStatus,
+                $candidateSnapshot->httpStatus,
+                []
+            );
+        }
+
+        return new PageResult(
+            $path,
+            $title,
+            'matching',
+            $baselineUrl,
+            $candidateUrl,
+            $baselineSnapshot->httpStatus,
+            $candidateSnapshot->httpStatus,
+            array_merge($artifacts, [
+                'baseline' => $this->filesystem->relativePath($outputDir, $baselineScreenshotPath),
+                'candidate' => $this->filesystem->relativePath($outputDir, $candidateScreenshotPath),
+            ])
+        );
+    }
+
+    /**
+     * @param array<string, ?string> $artifacts
+     * @return array<string, ?string>
+     */
+    private function relativeArtifacts(string $outputDir, array $artifacts): array
+    {
+        $normalized = [];
+
+        foreach ($artifacts as $name => $path) {
+            if (!is_string($path) || $path === '') {
+                $normalized[$name] = null;
+                continue;
+            }
+
+            $normalized[$name] = $this->filesystem->relativePath($outputDir, $path);
+        }
+
+        return $normalized;
+    }
+
+    private function buildSummary(
+        RunConfiguration $configuration,
+        string $generatedAt,
+        string $outputDir,
+        string $reportPath,
+        string $reportJsonPath,
+        array $pageResults
+    ): RunSummary {
+        $counts = [
+            'matching' => 0,
+            'different' => 0,
+            'http_error' => 0,
+            'runtime_error' => 0,
+        ];
+
+        foreach ($pageResults as $pageResult) {
+            if ($pageResult instanceof PageResult && array_key_exists($pageResult->status, $counts)) {
+                $counts[$pageResult->status]++;
+            }
+        }
+
+        return new RunSummary(
+            baselineBaseUrl: $configuration->baselineBaseUrl,
+            candidateBaseUrl: $configuration->candidateBaseUrl,
+            generatedAt: $generatedAt,
+            outputDir: $outputDir,
+            reportPath: $reportPath,
+            reportJsonPath: $reportJsonPath,
+            totalPages: count($pageResults),
+            matchingPages: $counts['matching'],
+            differentPages: $counts['different'],
+            httpErrorPages: $counts['http_error'],
+            runtimeErrorPages: $counts['runtime_error'],
+            shiftTolerance: $configuration->shiftTolerance,
+            captureMatchingScreenshots: $configuration->captureMatchingScreenshots
+        );
+    }
+
+    private function resolveOutputDirectory(?string $configuredOutputDir): string
+    {
+        $configuredOutputDir = $configuredOutputDir === null ? '' : trim($configuredOutputDir);
+
+        if ($configuredOutputDir !== '') {
+            return $configuredOutputDir;
+        }
+
+        return $this->filesystem->joinPath('var', 'results', 'run-' . $this->clock->timestampForRunDirectory());
+    }
+
+    private function joinBaseUrlAndPath(string $baseUrl, string $path): string
+    {
+        return $path === '/'
+            ? $baseUrl
+            : rtrim($baseUrl, '/') . $path;
+    }
+
+    private function fallbackTitle(string $path, string $baselineUrl, string $candidateUrl): string
+    {
+        if ($path !== '') {
+            return $path;
+        }
+
+        return $baselineUrl !== '' ? $baselineUrl : $candidateUrl;
+    }
+
+    private function bestTitle(string $baselineTitle, string $candidateTitle, string $path, string $baselineUrl, string $candidateUrl): string
+    {
+        $title = trim($baselineTitle);
+
+        if ($title !== '') {
+            return $title;
+        }
+
+        $title = trim($candidateTitle);
+
+        if ($title !== '') {
+            return $title;
+        }
+
+        return $this->fallbackTitle($path, $baselineUrl, $candidateUrl);
+    }
+}
