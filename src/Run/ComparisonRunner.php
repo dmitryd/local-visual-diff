@@ -12,6 +12,7 @@ use LocalVisualDiff\Report\ReportRenderer;
 use LocalVisualDiff\Report\ReportViewModelFactory;
 use LocalVisualDiff\Support\Clock;
 use LocalVisualDiff\Support\Filesystem;
+use LocalVisualDiff\Support\RunProfiler;
 use LocalVisualDiff\Support\Slugger;
 use RuntimeException;
 use Throwable;
@@ -39,20 +40,24 @@ final class ComparisonRunner
 
     public function run(RunConfiguration $configuration): RunSummary
     {
+        $profiler = new RunProfiler($configuration->profile);
         $outputDir = $this->resolveOutputDirectory($configuration->outputDir);
         $this->filesystem->ensureDirectory($outputDir);
 
         $generatedAt = $this->clock->formattedNow();
         $pageResults = [];
         $this->logVerbose($configuration, sprintf('Comparing %s', '/'));
-        $homepageResult = $this->comparePage($configuration, $outputDir, '/');
+        $homepageResult = $this->comparePage($configuration, $outputDir, '/', $profiler);
         $pageResults[] = $homepageResult;
 
         if ($this->shouldCrawlAdditionalPages($configuration, $homepageResult)) {
-            $paths = $this->pageQueueFactory->build(
-                $configuration->baselineBaseUrl,
-                true,
-                $configuration->maxPages
+            $paths = $profiler->measure(
+                'queue_build',
+                fn (): array => $this->pageQueueFactory->build(
+                    $configuration->baselineBaseUrl,
+                    true,
+                    $configuration->maxPages
+                )
             );
 
             foreach ($paths as $path) {
@@ -61,7 +66,7 @@ final class ComparisonRunner
                 }
 
                 $this->logVerbose($configuration, sprintf('Comparing %s', $path));
-                $pageResults[] = $this->comparePage($configuration, $outputDir, $path);
+                $pageResults[] = $this->comparePage($configuration, $outputDir, $path, $profiler);
             }
         }
 
@@ -74,8 +79,12 @@ final class ComparisonRunner
             array_map(static fn (PageResult $pageResult): array => $pageResult->toArray(), $pageResults)
         );
 
-        $this->filesystem->writeFile($reportPath, $this->reportRenderer->render($viewModel));
-        $this->filesystem->writeJson($reportJsonPath, $viewModel);
+        $profiler->measure('report_write', function () use ($reportPath, $reportJsonPath, $viewModel): void {
+            $this->filesystem->writeFile($reportPath, $this->reportRenderer->render($viewModel));
+            $this->filesystem->writeJson($reportJsonPath, $viewModel);
+        });
+
+        $this->logProfile($profiler);
 
         return $summary;
     }
@@ -93,7 +102,7 @@ final class ComparisonRunner
         return !in_array($homepageResult->status, ['http_error', 'runtime_error'], true);
     }
 
-    private function comparePage(RunConfiguration $configuration, string $outputDir, string $path): PageResult
+    private function comparePage(RunConfiguration $configuration, string $outputDir, string $path, RunProfiler $profiler): PageResult
     {
         $pageSlug = $this->slugger->slugPath($path);
         $pageDir = $this->filesystem->joinPath($outputDir, 'pages', $pageSlug);
@@ -105,25 +114,31 @@ final class ComparisonRunner
         $candidateScreenshotPath = $this->filesystem->joinPath($pageDir, 'candidate.png');
 
         try {
-            $baselineSnapshot = $this->screenshotService->capture(
-                $baselineUrl,
-                $baselineScreenshotPath,
-                $configuration->viewportWidth,
-                $configuration->viewportHeight,
-                $configuration->timeoutMs,
-                $configuration->settleMs,
-                $configuration->browserPath,
-                PHP_OS_FAMILY
+            $baselineSnapshot = $profiler->measure(
+                'capture_baseline',
+                fn () => $this->screenshotService->capture(
+                    $baselineUrl,
+                    $baselineScreenshotPath,
+                    $configuration->viewportWidth,
+                    $configuration->viewportHeight,
+                    $configuration->timeoutMs,
+                    $configuration->settleMs,
+                    $configuration->browserPath,
+                    PHP_OS_FAMILY
+                )
             );
-            $candidateSnapshot = $this->screenshotService->capture(
-                $candidateUrl,
-                $candidateScreenshotPath,
-                $configuration->viewportWidth,
-                $configuration->viewportHeight,
-                $configuration->timeoutMs,
-                $configuration->settleMs,
-                $configuration->browserPath,
-                PHP_OS_FAMILY
+            $candidateSnapshot = $profiler->measure(
+                'capture_candidate',
+                fn () => $this->screenshotService->capture(
+                    $candidateUrl,
+                    $candidateScreenshotPath,
+                    $configuration->viewportWidth,
+                    $configuration->viewportHeight,
+                    $configuration->timeoutMs,
+                    $configuration->settleMs,
+                    $configuration->browserPath,
+                    PHP_OS_FAMILY
+                )
             );
         } catch (Throwable $throwable) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
@@ -164,15 +179,18 @@ final class ComparisonRunner
 
         try {
             $pageHeight = max($baselineSnapshot->pageHeight, $candidateSnapshot->pageHeight);
-            $comparison = $this->imageComparator->compare(
-                $baselineScreenshotPath,
-                $candidateScreenshotPath,
-                $configuration->shiftTolerance,
-                $configuration->colorThreshold,
-                $pageDir,
-                $pageHeight,
-                $configuration->maxFullpageHeight,
-                $configuration->contextPadding
+            $comparison = $profiler->measure(
+                'compare_images',
+                fn () => $this->imageComparator->compare(
+                    $baselineScreenshotPath,
+                    $candidateScreenshotPath,
+                    $configuration->shiftTolerance,
+                    $configuration->colorThreshold,
+                    $pageDir,
+                    $pageHeight,
+                    $configuration->maxFullpageHeight,
+                    $configuration->contextPadding
+                )
             );
         } catch (Throwable $throwable) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
@@ -368,5 +386,12 @@ final class ComparisonRunner
         $this->logVerbose($configuration, sprintf('  %s title: %s', $label, $snapshot->title !== '' ? $snapshot->title : '-'));
         $this->logVerbose($configuration, sprintf('  %s navigator.language: %s', $label, $snapshot->navigatorLanguage !== '' ? $snapshot->navigatorLanguage : '-'));
         $this->logVerbose($configuration, sprintf('  %s navigator.languages: %s', $label, $languages));
+    }
+
+    private function logProfile(RunProfiler $profiler): void
+    {
+        foreach ($profiler->formatLines() as $line) {
+            fwrite(STDOUT, $line . PHP_EOL);
+        }
     }
 }

@@ -59,7 +59,8 @@ final class CompareCommand extends Command
             ->addOption('crawl-homepage-links', null, InputOption::VALUE_NONE, 'Enable homepage link crawling for later phases.')
             ->addOption('max-pages', null, InputOption::VALUE_REQUIRED, 'Maximum number of pages to compare.')
             ->addOption('capture-matching-screenshots', null, InputOption::VALUE_NONE, 'Keep screenshots for matching pages.')
-            ->addOption('overwrite', null, InputOption::VALUE_NONE, 'Allow existing output directories to be reused.');
+            ->addOption('overwrite', null, InputOption::VALUE_NONE, 'Allow existing output directories to be reused.')
+            ->addOption('profile', null, InputOption::VALUE_NONE, 'TEMPORARY: print timing diagnostics for performance investigation.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -98,7 +99,8 @@ final class CompareCommand extends Command
                 captureMatchingScreenshots: $config->captureMatchingScreenshots,
                 overwrite: $config->overwrite,
                 verbose: $output->isVerbose(),
-                veryVerbose: $output->isVeryVerbose()
+                veryVerbose: $output->isVeryVerbose(),
+                profile: (bool) $input->getOption('profile')
             );
 
             $summary = $this->runner->run($runConfiguration);
