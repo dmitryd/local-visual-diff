@@ -32,7 +32,8 @@ final class RunConfiguration
         public readonly int $maxPages = 0,
         public readonly bool $captureMatchingScreenshots = false,
         public readonly bool $overwrite = false,
-        public readonly bool $verbose = false
+        public readonly bool $verbose = false,
+        public readonly bool $veryVerbose = false
     ) {
     }
 

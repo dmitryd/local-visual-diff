@@ -354,7 +354,7 @@ final class ComparisonRunner
 
     private function logSnapshotDiagnostics(RunConfiguration $configuration, string $label, \LocalVisualDiff\Browser\PageSnapshot $snapshot): void
     {
-        if (!$configuration->verbose) {
+        if (!$configuration->veryVerbose) {
             return;
         }
 
