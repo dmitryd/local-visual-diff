@@ -31,6 +31,7 @@ final class RecursivePageCrawler
     public function crawl(
         string $baselineBaseUrl,
         string $ignoredQueryParamNamePattern = '',
+        bool $fetchVerifyTls = true,
         int $maxPages = 0
     ): array {
         $baselineBaseUrl = $this->urlNormalizer->normalizeBaseUrl($baselineBaseUrl);
@@ -46,7 +47,7 @@ final class RecursivePageCrawler
             $currentPageUrl = $this->urlMapper->joinBaseUrlAndTarget($baselineBaseUrl, $currentTarget);
 
             try {
-                $hrefs = $this->linkExtractor->extract($currentPageUrl);
+                $hrefs = $this->linkExtractor->extract($currentPageUrl, $fetchVerifyTls);
             } catch (Throwable) {
                 continue;
             }

@@ -27,7 +27,7 @@ final class RecursivePageCrawlerTest extends TestCase
 
         self::assertSame(
             ['/', '/about', '/products?page=2', '/contact'],
-            $crawler->crawl('http://legacy.local', '', 0)
+            $crawler->crawl('http://legacy.local', '', true, 0)
         );
     }
 
@@ -44,7 +44,7 @@ final class RecursivePageCrawlerTest extends TestCase
 
         self::assertSame(
             ['/', '/search?category=cards'],
-            $crawler->crawl('http://legacy.local', '/^tx_solr\\[/', 0)
+            $crawler->crawl('http://legacy.local', '/^tx_solr\\[/', true, 0)
         );
     }
 
@@ -59,7 +59,7 @@ final class RecursivePageCrawlerTest extends TestCase
             new UrlNormalizer()
         );
 
-        self::assertSame(['/', '/about'], $crawler->crawl('http://legacy.local', '', 2));
+        self::assertSame(['/', '/about'], $crawler->crawl('http://legacy.local', '', true, 2));
     }
 }
 
@@ -72,8 +72,10 @@ final class FixtureRecursiveLinkExtractor extends LinkExtractor
     {
     }
 
-    protected function fetchHtml(string $pageUrl): string
+    protected function fetchHtml(string $pageUrl, bool $verifyTls = true): string
     {
+        unset($verifyTls);
+
         return $this->htmlByUrl[$pageUrl] ?? '';
     }
 }

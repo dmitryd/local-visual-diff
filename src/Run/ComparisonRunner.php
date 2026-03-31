@@ -57,6 +57,7 @@ final class ComparisonRunner
                     $configuration->baselineBaseUrl,
                     true,
                     $configuration->ignoredQueryParamNamePattern,
+                    $configuration->crawlFetchVerifyTls,
                     $configuration->maxPages
                 )
             );

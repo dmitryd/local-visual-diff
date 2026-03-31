@@ -22,41 +22,66 @@ class LinkExtractor
      *
      * @return array<int, string>
      */
-    public function extract(string $pageUrl): array
+    public function extract(string $pageUrl, bool $verifyTls = true): array
     {
-        $html = $this->fetchHtml($pageUrl);
+        $html = $this->fetchHtml($pageUrl, $verifyTls);
 
         return $this->extractFromHtml($html);
     }
 
     /**
-     * Fetch the page HTML from the network.
+     * Fetch the page HTML from the network with cURL.
      *
      * Tests can override this method to provide fixture HTML without making
      * any network requests.
      */
-    protected function fetchHtml(string $pageUrl): string
+    protected function fetchHtml(string $pageUrl, bool $verifyTls = true): string
     {
-        $context = stream_context_create([
-            'http' => [
-                'timeout' => 20,
-                'ignore_errors' => true,
-                'follow_location' => 1,
-            ],
-            'https' => [
-                'timeout' => 20,
-                'ignore_errors' => true,
-                'follow_location' => 1,
-            ],
-        ]);
+        $handle = curl_init($pageUrl);
 
-        $html = @file_get_contents($pageUrl, false, $context);
-
-        if ($html === false) {
-            throw new RuntimeException(sprintf('Could not fetch page HTML from %s', $pageUrl));
+        if ($handle === false) {
+            throw new RuntimeException(sprintf('Could not initialize cURL for %s', $pageUrl));
         }
 
-        return $html;
+        curl_setopt_array($handle, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_HEADER => false,
+            CURLOPT_SSL_VERIFYPEER => $verifyTls,
+            CURLOPT_SSL_VERIFYHOST => $verifyTls ? 2 : 0,
+        ]);
+
+        $html = curl_exec($handle);
+
+        if ($html === false) {
+            $errorNumber = curl_errno($handle);
+            $errorMessage = curl_error($handle);
+            curl_close($handle);
+
+            if (!$verifyTls && $errorMessage !== '') {
+                throw new RuntimeException(sprintf('Could not fetch page HTML from %s: %s', $pageUrl, $errorMessage));
+            }
+
+            if ($verifyTls && $errorNumber === 60) {
+                throw new RuntimeException(sprintf(
+                    'Could not fetch page HTML from %s: %s. If this is a local development certificate, try config/local.ini with [crawl] fetch_verify_tls = false or pass --insecure-crawl-fetch.',
+                    $pageUrl,
+                    $errorMessage
+                ));
+            }
+
+            throw new RuntimeException(sprintf('Could not fetch page HTML from %s: %s', $pageUrl, $errorMessage));
+        }
+
+        $httpStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+        curl_close($handle);
+
+        if ($httpStatus >= 400) {
+            throw new RuntimeException(sprintf('Could not fetch page HTML from %s: HTTP %d', $pageUrl, $httpStatus));
+        }
+
+        return is_string($html) ? $html : '';
     }
 
     /**

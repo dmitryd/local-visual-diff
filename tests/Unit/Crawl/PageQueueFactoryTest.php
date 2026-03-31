@@ -17,7 +17,7 @@ final class PageQueueFactoryTest extends TestCase
     {
         $factory = new PageQueueFactory(new RecursivePageCrawler(), new UrlNormalizer());
 
-        self::assertSame(['/'], $factory->build('http://legacy.local/', false, '', 0));
+        self::assertSame(['/'], $factory->build('http://legacy.local/', false, '', true, 0));
     }
 
     public function testCrawlEnabledDelegatesToRecursiveCrawler(): void
@@ -37,7 +37,7 @@ final class PageQueueFactoryTest extends TestCase
 
         self::assertSame(
             ['/', '/about', '/search?category=cards'],
-            $factory->build('http://legacy.local/', true, '/^tx_solr\\[/', 0)
+            $factory->build('http://legacy.local/', true, '/^tx_solr\\[/', true, 0)
         );
     }
 }
@@ -51,8 +51,10 @@ final class FixturePageQueueLinkExtractor extends LinkExtractor
     {
     }
 
-    protected function fetchHtml(string $pageUrl): string
+    protected function fetchHtml(string $pageUrl, bool $verifyTls = true): string
     {
+        unset($verifyTls);
+
         return $this->htmlByUrl[$pageUrl] ?? '';
     }
 }

@@ -28,6 +28,7 @@ final class PageQueueFactory
         string $baselineBaseUrl,
         bool $crawlHomepageLinks,
         string $ignoredQueryParamNamePattern,
+        bool $fetchVerifyTls,
         int $maxPages
     ): array
     {
@@ -40,6 +41,7 @@ final class PageQueueFactory
         return $this->recursivePageCrawler->crawl(
             $baselineBaseUrl,
             $ignoredQueryParamNamePattern,
+            $fetchVerifyTls,
             $maxPages
         );
     }

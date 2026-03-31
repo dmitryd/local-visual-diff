@@ -42,6 +42,7 @@ overlay_opacity = 0.5
 [crawl]
 crawl_homepage_links = true
 ignored_query_param_name_pattern = ""
+fetch_verify_tls = true
 max_pages = 0
 
 [report]
@@ -70,6 +71,7 @@ INI);
         self::assertSame('var/results', $config->outputDir);
         self::assertTrue($config->crawlHomepageLinks);
         self::assertSame('', $config->ignoredQueryParamNamePattern);
+        self::assertTrue($config->crawlFetchVerifyTls);
         self::assertFalse($config->captureMatchingScreenshots);
     }
 

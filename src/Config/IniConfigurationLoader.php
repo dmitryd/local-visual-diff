@@ -109,6 +109,7 @@ final class IniConfigurationLoader
                     break;
                 case 'crawl_homepage_links':
                 case 'ignored_query_param_name_pattern':
+                case 'fetch_verify_tls':
                 case 'max_pages':
                     $nested['crawl'][$key] = $value;
                     break;

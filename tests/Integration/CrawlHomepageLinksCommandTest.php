@@ -291,8 +291,10 @@ final class FixtureLinkExtractor extends LinkExtractor
     {
     }
 
-    protected function fetchHtml(string $pageUrl): string
+    protected function fetchHtml(string $pageUrl, bool $verifyTls = true): string
     {
+        unset($verifyTls);
+
         if (!array_key_exists($pageUrl, $this->htmlByUrl)) {
             throw new RuntimeException(sprintf('No fixture HTML configured for %s', $pageUrl));
         }

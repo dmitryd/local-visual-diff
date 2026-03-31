@@ -57,6 +57,7 @@ final class CompareCommand extends Command
             ->addOption('shift-tolerance', null, InputOption::VALUE_REQUIRED, 'Pixel shift tolerance for comparison.')
             ->addOption('color-threshold', null, InputOption::VALUE_REQUIRED, 'Color threshold for pixel comparison.')
             ->addOption('ignored-query-param-name-pattern', null, InputOption::VALUE_REQUIRED, 'Regex for query parameter names that should be removed during crawl deduplication.')
+            ->addOption('insecure-crawl-fetch', null, InputOption::VALUE_NONE, 'Disable TLS certificate verification for recursive crawl HTML fetching.')
             ->addOption('max-pages', null, InputOption::VALUE_REQUIRED, 'Maximum number of pages to compare.')
             ->addOption('capture-matching-screenshots', null, InputOption::VALUE_NONE, 'Keep screenshots for matching pages.')
             ->addOption('overwrite', null, InputOption::VALUE_NONE, 'Allow existing output directories to be reused.')
@@ -96,6 +97,7 @@ final class CompareCommand extends Command
                 overlayOpacity: $config->overlayOpacity,
                 crawlHomepageLinks: $config->crawlHomepageLinks,
                 ignoredQueryParamNamePattern: $config->ignoredQueryParamNamePattern,
+                crawlFetchVerifyTls: $config->crawlFetchVerifyTls,
                 maxPages: $config->maxPages,
                 captureMatchingScreenshots: $config->captureMatchingScreenshots,
                 overwrite: $config->overwrite,
@@ -135,6 +137,7 @@ final class CompareCommand extends Command
             'shift_tolerance' => $input->getOption('shift-tolerance'),
             'color_threshold' => $input->getOption('color-threshold'),
             'ignored_query_param_name_pattern' => $input->getOption('ignored-query-param-name-pattern'),
+            'fetch_verify_tls' => $input->getOption('insecure-crawl-fetch') ? false : null,
             'max_pages' => $input->getOption('max-pages'),
             'capture_matching_screenshots' => $input->getOption('capture-matching-screenshots'),
             'overwrite' => $input->getOption('overwrite'),
