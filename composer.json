@@ -6,10 +6,12 @@
     "php": "^8.3",
     "ext-curl": "*",
     "ext-dom": "*",
+    "ext-imagick": "*",
     "ext-json": "*",
     "ext-libxml": "*",
     "ext-mbstring": "*",
-    "ext-imagick": "*",
+    "ext-sockets": "*",
+    "chrome-php/chrome": "^1.14",
     "symfony/console": "^7.3"
   },
   "require-dev": {
