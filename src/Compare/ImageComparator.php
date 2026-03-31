@@ -87,27 +87,30 @@ final class ImageComparator
         $width = $baselineImage->getImageWidth();
         $height = $baselineImage->getImageHeight();
 
-        $baselinePixels = $baselineImage->exportImagePixels(0, 0, $width, $height, 'RGBA', Imagick::PIXEL_CHAR);
-        $candidatePixels = $candidateImage->exportImagePixels(0, 0, $width, $height, 'RGBA', Imagick::PIXEL_CHAR);
-
         $matchedBaselinePixels = str_repeat("\0", intdiv(($width * $height) + 7, 8));
         $changedCoordinates = [];
         $changedPixels = 0;
+        $baselineRowCache = [];
 
         for ($y = 0; $y < $height; $y++) {
+            $candidateRow = $this->exportRowPixels($candidateImage, $width, $y);
+            $baselineRow = $this->baselineRow($baselineImage, $baselineRowCache, $width, $y, $shiftTolerance);
+
             for ($x = 0; $x < $width; $x++) {
                 $pixelIndex = ($y * $width) + $x;
 
-                if ($this->pixelsMatchAtSamePosition($baselinePixels, $candidatePixels, $pixelIndex, $colorThreshold)) {
+                if ($this->pixelsMatchAtSamePosition($baselineRow, $candidateRow, $x, $colorThreshold)) {
                     continue;
                 }
 
                 $matchIndex = $this->findNearbyBaselineMatch(
-                    $baselinePixels,
-                    $candidatePixels,
+                    $baselineImage,
+                    $baselineRowCache,
+                    $candidateRow,
                     $width,
                     $height,
-                    $pixelIndex,
+                    $x,
+                    $y,
                     $shiftTolerance,
                     $colorThreshold,
                     $matchedBaselinePixels
@@ -121,6 +124,8 @@ final class ImageComparator
                 $changedPixels++;
                 $changedCoordinates[] = [$x, $y];
             }
+
+            $this->pruneBaselineRowCache($baselineRowCache, $y, $shiftTolerance);
         }
 
         return [
@@ -152,32 +157,41 @@ final class ImageComparator
     }
 
     /**
-     * @param array<int, int> $baselinePixels
-     * @param array<int, int> $candidatePixels
+     * Compare a single pixel from the same x-position in two row buffers.
+     *
+     * Reading one row at a time keeps PHP memory bounded even for tall pages.
+     *
+     * @param array<int, int> $baselineRow
+     * @param array<int, int> $candidateRow
      */
-    private function pixelsMatchAtSamePosition(array $baselinePixels, array $candidatePixels, int $pixelIndex, int $colorThreshold): bool
+    private function pixelsMatchAtSamePosition(array $baselineRow, array $candidateRow, int $x, int $colorThreshold): bool
     {
-        $offset = $pixelIndex * 4;
+        $offset = $x * 4;
 
-        return abs($baselinePixels[$offset] - $candidatePixels[$offset]) <= $colorThreshold
-            && abs($baselinePixels[$offset + 1] - $candidatePixels[$offset + 1]) <= $colorThreshold
-            && abs($baselinePixels[$offset + 2] - $candidatePixels[$offset + 2]) <= $colorThreshold
-            && abs($baselinePixels[$offset + 3] - $candidatePixels[$offset + 3]) <= $colorThreshold;
+        return abs($baselineRow[$offset] - $candidateRow[$offset]) <= $colorThreshold
+            && abs($baselineRow[$offset + 1] - $candidateRow[$offset + 1]) <= $colorThreshold
+            && abs($baselineRow[$offset + 2] - $candidateRow[$offset + 2]) <= $colorThreshold
+            && abs($baselineRow[$offset + 3] - $candidateRow[$offset + 3]) <= $colorThreshold;
     }
 
     /**
      * Search for a nearby baseline pixel that matches the candidate pixel and
      * has not already been matched by a previous pixel.
      *
-     * @param array<int, int> $baselinePixels
-     * @param array<int, int> $candidatePixels
+     * Instead of exporting the entire image, rows are loaded on demand and
+     * cached only for the current tolerance window.
+     *
+     * @param array<int, array<int, int>> $baselineRowCache
+     * @param array<int, int> $candidateRow
      */
     private function findNearbyBaselineMatch(
-        array $baselinePixels,
-        array $candidatePixels,
+        Imagick $baselineImage,
+        array &$baselineRowCache,
+        array $candidateRow,
         int $width,
         int $height,
-        int $candidateIndex,
+        int $candidateX,
+        int $candidateY,
         int $shiftTolerance,
         int $colorThreshold,
         string $matchedBaselinePixels
@@ -185,9 +199,6 @@ final class ImageComparator
         if ($shiftTolerance <= 0) {
             return null;
         }
-
-        $candidateX = $candidateIndex % $width;
-        $candidateY = intdiv($candidateIndex, $width);
 
         for ($distance = 1; $distance <= $shiftTolerance; $distance++) {
             for ($offsetY = -$distance; $offsetY <= $distance; $offsetY++) {
@@ -205,7 +216,9 @@ final class ImageComparator
                         continue;
                     }
 
-                    if ($this->pixelsMatchAtIndices($baselinePixels, $candidatePixels, $baselineIndex, $candidateIndex, $colorThreshold)) {
+                    $baselineRow = $this->baselineRow($baselineImage, $baselineRowCache, $width, $baselineY, $shiftTolerance);
+
+                    if ($this->pixelsMatchAtIndices($baselineRow, $candidateRow, $baselineX, $candidateX, $colorThreshold)) {
                         return $baselineIndex;
                     }
                 }
@@ -232,18 +245,66 @@ final class ImageComparator
     }
 
     /**
-     * @param array<int, int> $baselinePixels
-     * @param array<int, int> $candidatePixels
+     * @param array<int, int> $baselineRow
+     * @param array<int, int> $candidateRow
      */
-    private function pixelsMatchAtIndices(array $baselinePixels, array $candidatePixels, int $baselineIndex, int $candidateIndex, int $colorThreshold): bool
+    private function pixelsMatchAtIndices(array $baselineRow, array $candidateRow, int $baselineX, int $candidateX, int $colorThreshold): bool
     {
-        $baselineOffset = $baselineIndex * 4;
-        $candidateOffset = $candidateIndex * 4;
+        $baselineOffset = $baselineX * 4;
+        $candidateOffset = $candidateX * 4;
 
-        return abs($baselinePixels[$baselineOffset] - $candidatePixels[$candidateOffset]) <= $colorThreshold
-            && abs($baselinePixels[$baselineOffset + 1] - $candidatePixels[$candidateOffset + 1]) <= $colorThreshold
-            && abs($baselinePixels[$baselineOffset + 2] - $candidatePixels[$candidateOffset + 2]) <= $colorThreshold
-            && abs($baselinePixels[$baselineOffset + 3] - $candidatePixels[$candidateOffset + 3]) <= $colorThreshold;
+        return abs($baselineRow[$baselineOffset] - $candidateRow[$candidateOffset]) <= $colorThreshold
+            && abs($baselineRow[$baselineOffset + 1] - $candidateRow[$candidateOffset + 1]) <= $colorThreshold
+            && abs($baselineRow[$baselineOffset + 2] - $candidateRow[$candidateOffset + 2]) <= $colorThreshold
+            && abs($baselineRow[$baselineOffset + 3] - $candidateRow[$candidateOffset + 3]) <= $colorThreshold;
+    }
+
+    /**
+     * Export one row of RGBA pixels.
+     *
+     * Keeping the working set to one row at a time prevents the comparator from
+     * allocating giant PHP arrays for tall full-page screenshots.
+     *
+     * @return array<int, int>
+     */
+    private function exportRowPixels(Imagick $image, int $width, int $y): array
+    {
+        return $image->exportImagePixels(0, $y, $width, 1, 'RGBA', Imagick::PIXEL_CHAR);
+    }
+
+    /**
+     * Load a baseline row into a small sliding cache.
+     *
+     * @param array<int, array<int, int>> $baselineRowCache
+     * @return array<int, int>
+     */
+    private function baselineRow(Imagick $baselineImage, array &$baselineRowCache, int $width, int $y, int $shiftTolerance): array
+    {
+        if (!array_key_exists($y, $baselineRowCache)) {
+            $baselineRowCache[$y] = $this->exportRowPixels($baselineImage, $width, $y);
+        }
+
+        if ($shiftTolerance >= 0) {
+            $this->pruneBaselineRowCache($baselineRowCache, $y, $shiftTolerance);
+        }
+
+        return $baselineRowCache[$y];
+    }
+
+    /**
+     * Drop rows that can no longer participate in nearby-pixel matching.
+     *
+     * @param array<int, array<int, int>> $baselineRowCache
+     */
+    private function pruneBaselineRowCache(array &$baselineRowCache, int $currentY, int $shiftTolerance): void
+    {
+        $minimumY = $currentY - max($shiftTolerance, 0);
+
+        foreach (array_keys($baselineRowCache) as $cachedY) {
+            if ($cachedY < $minimumY) {
+                unset($baselineRowCache[$cachedY]);
+            }
+        }
     }
 
     /**
