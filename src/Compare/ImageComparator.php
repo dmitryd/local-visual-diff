@@ -22,7 +22,8 @@ final class ImageComparator
 {
     public function __construct(
         private readonly OverlayGenerator $overlayGenerator = new OverlayGenerator(),
-        private readonly DiffImageGenerator $diffImageGenerator = new DiffImageGenerator()
+        private readonly DiffImageGenerator $diffImageGenerator = new DiffImageGenerator(),
+        private readonly ContextArtifactGenerator $contextArtifactGenerator = new ContextArtifactGenerator()
     ) {
     }
 
@@ -31,7 +32,10 @@ final class ImageComparator
         string $candidatePath,
         int $shiftTolerance = 0,
         int $colorThreshold = 0,
-        ?string $artifactDirectory = null
+        ?string $artifactDirectory = null,
+        int $pageHeight = 0,
+        int $maxFullpageHeight = 0,
+        int $contextPadding = 200
     ): ComparisonResult {
         $baselineImage = $this->loadImage($baselinePath);
         $candidateImage = $this->loadImage($candidatePath);
@@ -54,7 +58,10 @@ final class ImageComparator
                 $artifactDirectory,
                 $normalizedBaseline,
                 $normalizedCandidate,
-                $changedCoordinates
+                $changedCoordinates,
+                $pageHeight,
+                $maxFullpageHeight,
+                $contextPadding
             );
         }
 
@@ -247,7 +254,10 @@ final class ImageComparator
         string $artifactDirectory,
         Imagick $baselineImage,
         Imagick $candidateImage,
-        array $changedCoordinates
+        array $changedCoordinates,
+        int $pageHeight,
+        int $maxFullpageHeight,
+        int $contextPadding
     ): array {
         if (!is_dir($artifactDirectory) && !mkdir($artifactDirectory, 0777, true) && !is_dir($artifactDirectory)) {
             throw new RuntimeException(sprintf('Could not create artifact directory: %s', $artifactDirectory));
@@ -268,12 +278,54 @@ final class ImageComparator
         $this->overlayGenerator->generate($baselineImage, $candidateImage, $overlayPath);
         $this->diffImageGenerator->generate($baselineImage, $changedCoordinates, $diffPath);
 
+        $contextPath = null;
+
+        if ($pageHeight > 0 && $maxFullpageHeight > 0 && $pageHeight > $maxFullpageHeight) {
+            $bounds = $this->changedCoordinateBounds($changedCoordinates);
+
+            if ($bounds !== null) {
+                $contextPath = $artifactDirectory . DIRECTORY_SEPARATOR . 'context.png';
+                $this->contextArtifactGenerator->generate(
+                    $baselineImage,
+                    $candidateImage,
+                    $bounds['minY'],
+                    $bounds['maxY'],
+                    $contextPadding,
+                    $contextPath
+                );
+            }
+        }
+
         return [
             'baseline' => $baselinePath,
             'candidate' => $candidatePath,
             'overlay' => $overlayPath,
             'diff' => $diffPath,
-            'context' => null,
+            'context' => $contextPath,
+        ];
+    }
+
+    /**
+     * @param array<int, array{0:int,1:int}> $changedCoordinates
+     * @return array{minY:int,maxY:int}|null
+     */
+    private function changedCoordinateBounds(array $changedCoordinates): ?array
+    {
+        if ($changedCoordinates === []) {
+            return null;
+        }
+
+        $minY = $changedCoordinates[0][1];
+        $maxY = $changedCoordinates[0][1];
+
+        foreach ($changedCoordinates as [, $y]) {
+            $minY = min($minY, $y);
+            $maxY = max($maxY, $y);
+        }
+
+        return [
+            'minY' => $minY,
+            'maxY' => $maxY,
         ];
     }
 }

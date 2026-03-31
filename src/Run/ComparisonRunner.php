@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LocalVisualDiff\Run;
 
 use LocalVisualDiff\Browser\ScreenshotService;
+use LocalVisualDiff\Crawl\PageQueueFactory;
 use LocalVisualDiff\Compare\ImageComparator;
 use LocalVisualDiff\Config\RunConfiguration;
 use LocalVisualDiff\Report\ReportRenderer;
@@ -27,6 +28,7 @@ final class ComparisonRunner
     public function __construct(
         private readonly ScreenshotService $screenshotService = new ScreenshotService(),
         private readonly ImageComparator $imageComparator = new ImageComparator(),
+        private readonly PageQueueFactory $pageQueueFactory = new PageQueueFactory(),
         private readonly ReportViewModelFactory $reportViewModelFactory = new ReportViewModelFactory(),
         private readonly ReportRenderer $reportRenderer = new ReportRenderer(),
         private readonly Filesystem $filesystem = new Filesystem(),
@@ -41,9 +43,25 @@ final class ComparisonRunner
         $this->filesystem->ensureDirectory($outputDir);
 
         $generatedAt = $this->clock->formattedNow();
-        $pageResults = [
-            $this->compareHomepage($configuration, $outputDir),
-        ];
+        $pageResults = [];
+        $homepageResult = $this->comparePage($configuration, $outputDir, '/');
+        $pageResults[] = $homepageResult;
+
+        if ($this->shouldCrawlAdditionalPages($configuration, $homepageResult)) {
+            $paths = $this->pageQueueFactory->build(
+                $configuration->baselineBaseUrl,
+                true,
+                $configuration->maxPages
+            );
+
+            foreach ($paths as $path) {
+                if ($path === '/') {
+                    continue;
+                }
+
+                $pageResults[] = $this->comparePage($configuration, $outputDir, $path);
+            }
+        }
 
         $reportPath = $this->filesystem->joinPath($outputDir, 'report.html');
         $reportJsonPath = $this->filesystem->joinPath($outputDir, 'report.json');
@@ -55,10 +73,7 @@ final class ComparisonRunner
         );
 
         $this->filesystem->writeFile($reportPath, $this->reportRenderer->render($viewModel));
-        $this->filesystem->writeJson($reportJsonPath, [
-            'summary' => $summary->toArray(),
-            'results' => array_map(static fn (PageResult $pageResult): array => $pageResult->toArray(), $pageResults),
-        ]);
+        $this->filesystem->writeJson($reportJsonPath, $viewModel);
 
         return $summary;
     }
@@ -67,9 +82,17 @@ final class ComparisonRunner
      * Compare the homepage only. Later work can expand the queue, but the
      * actual per-page pipeline stays identical.
      */
-    private function compareHomepage(RunConfiguration $configuration, string $outputDir): PageResult
+    private function shouldCrawlAdditionalPages(RunConfiguration $configuration, PageResult $homepageResult): bool
     {
-        $path = '/';
+        if (!$configuration->crawlHomepageLinks) {
+            return false;
+        }
+
+        return !in_array($homepageResult->status, ['http_error', 'runtime_error'], true);
+    }
+
+    private function comparePage(RunConfiguration $configuration, string $outputDir, string $path): PageResult
+    {
         $pageSlug = $this->slugger->slugPath($path);
         $pageDir = $this->filesystem->joinPath($outputDir, 'pages', $pageSlug);
         $this->filesystem->ensureDirectory($pageDir);
@@ -135,12 +158,16 @@ final class ComparisonRunner
         }
 
         try {
+            $pageHeight = max($baselineSnapshot->pageHeight, $candidateSnapshot->pageHeight);
             $comparison = $this->imageComparator->compare(
                 $baselineScreenshotPath,
                 $candidateScreenshotPath,
                 $configuration->shiftTolerance,
                 $configuration->colorThreshold,
-                $pageDir
+                $pageDir,
+                $pageHeight,
+                $configuration->maxFullpageHeight,
+                $configuration->contextPadding
             );
         } catch (Throwable $throwable) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);

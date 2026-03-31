@@ -65,6 +65,23 @@ final class ImageComparatorTest extends TestCase
         self::assertFileExists($result->artifacts['diff']);
     }
 
+    public function testTallDifferentImagesWriteContextArtifact(): void
+    {
+        $workdir = $this->createWorkdir('context');
+        $baseline = $workdir . '/baseline.png';
+        $candidate = $workdir . '/candidate.png';
+
+        $this->createSceneImage($baseline, 20, 1000, 3, 500, 8, 620, 'black');
+        $this->createSceneImage($candidate, 20, 1000, 5, 500, 10, 620, 'black');
+
+        $result = (new ImageComparator())->compare($baseline, $candidate, 0, 0, $workdir . '/artifacts', 1000, 200, 40);
+
+        self::assertSame('different', $result->status);
+        self::assertTrue($result->hasDiff);
+        self::assertGreaterThan(0, $result->changedPixelCount);
+        self::assertFileExists($result->artifacts['context']);
+    }
+
     private function createWorkdir(string $name): string
     {
         $directory = sys_get_temp_dir() . '/local-visual-diff-' . $name . '-' . bin2hex(random_bytes(4));

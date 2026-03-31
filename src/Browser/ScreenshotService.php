@@ -19,7 +19,7 @@ use Throwable;
  * screenshot capture together so later orchestration code can treat a page
  * capture as a single operation.
  */
-final class ScreenshotService
+class ScreenshotService
 {
     public function __construct(
         private readonly BrowserFactory $browserFactory = new BrowserFactory(),
