@@ -56,16 +56,28 @@ class ScreenshotService
             $this->pageStabilizer->injectInto($page, $timeoutMs);
             $this->waitMilliseconds($settleMs);
 
+            $finalUrl = $this->readFinalUrl($page, $timeoutMs);
             $title = $this->readPageTitle($page, $timeoutMs);
             $httpStatus = $this->readHttpStatus($page, $timeoutMs);
             $pageHeight = $this->readPageHeight($page, $timeoutMs);
+            $navigatorLanguage = $this->readNavigatorLanguage($page, $timeoutMs);
+            $navigatorLanguages = $this->readNavigatorLanguages($page, $timeoutMs);
 
             $page->screenshot([
                 'format' => 'png',
                 'captureBeyondViewport' => true,
             ])->saveToFile($imagePath, $timeoutMs);
 
-            return new PageSnapshot($url, $title, $httpStatus, $imagePath, $pageHeight);
+            return new PageSnapshot(
+                $url,
+                $finalUrl,
+                $title,
+                $httpStatus,
+                $imagePath,
+                $pageHeight,
+                $navigatorLanguage,
+                $navigatorLanguages
+            );
         } catch (Throwable $throwable) {
             throw new RuntimeException(
                 sprintf('Could not capture screenshot for %s: %s', $url, $throwable->getMessage()),
@@ -90,6 +102,24 @@ class ScreenshotService
         $title = $evaluation->getReturnValue($timeoutMs);
 
         return trim((string) $title);
+    }
+
+    /**
+     * Read the final browser URL after redirects and client-side navigation.
+     *
+     * This is different from the requested URL and is the key detail needed to
+     * diagnose language redirects and similar browser-driven routing behavior.
+     *
+     * @throws CommunicationException
+     * @throws NoResponseAvailable
+     * @throws OperationTimedOut
+     */
+    private function readFinalUrl(Page $page, int $timeoutMs): string
+    {
+        $evaluation = $page->evaluate('window.location.href || ""');
+        $finalUrl = $evaluation->getReturnValue($timeoutMs);
+
+        return trim((string) $finalUrl);
     }
 
     /**
@@ -143,6 +173,47 @@ JS);
         $height = $evaluation->getReturnValue($timeoutMs);
 
         return is_numeric($height) ? (int) $height : 0;
+    }
+
+    /**
+     * @throws CommunicationException
+     * @throws NoResponseAvailable
+     * @throws OperationTimedOut
+     */
+    private function readNavigatorLanguage(Page $page, int $timeoutMs): string
+    {
+        $evaluation = $page->evaluate('navigator.language || ""');
+        $language = $evaluation->getReturnValue($timeoutMs);
+
+        return trim((string) $language);
+    }
+
+    /**
+     * @return array<int, string>
+     *
+     * @throws CommunicationException
+     * @throws NoResponseAvailable
+     * @throws OperationTimedOut
+     */
+    private function readNavigatorLanguages(Page $page, int $timeoutMs): array
+    {
+        $evaluation = $page->evaluate(<<<'JS'
+(function () {
+    if (!Array.isArray(navigator.languages)) {
+        return [];
+    }
+
+    return navigator.languages;
+})()
+JS);
+
+        $languages = $evaluation->getReturnValue($timeoutMs);
+
+        if (!is_array($languages)) {
+            return [];
+        }
+
+        return array_values(array_map(static fn (mixed $value): string => (string) $value, $languages));
     }
 
     private function waitMilliseconds(int $milliseconds): void

@@ -11,10 +11,13 @@ final class PageSnapshot
 {
     public function __construct(
         public readonly string $pageUrl,
+        public readonly string $finalUrl,
         public readonly string $title,
         public readonly int $httpStatus,
         public readonly string $imagePath,
-        public readonly int $pageHeight
+        public readonly int $pageHeight,
+        public readonly string $navigatorLanguage = '',
+        public readonly array $navigatorLanguages = []
     ) {
     }
 }

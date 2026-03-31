@@ -143,6 +143,9 @@ final class ComparisonRunner
 
         $title = $this->bestTitle($baselineSnapshot->title, $candidateSnapshot->title, $path, $baselineUrl, $candidateUrl);
 
+        $this->logSnapshotDiagnostics($configuration, 'Baseline', $baselineSnapshot);
+        $this->logSnapshotDiagnostics($configuration, 'Candidate', $candidateSnapshot);
+
         if ($baselineSnapshot->httpStatus >= 400 || $candidateSnapshot->httpStatus >= 400) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
@@ -347,5 +350,23 @@ final class ComparisonRunner
         }
 
         fwrite(STDOUT, $message . PHP_EOL);
+    }
+
+    private function logSnapshotDiagnostics(RunConfiguration $configuration, string $label, \LocalVisualDiff\Browser\PageSnapshot $snapshot): void
+    {
+        if (!$configuration->verbose) {
+            return;
+        }
+
+        $languages = $snapshot->navigatorLanguages === []
+            ? '-'
+            : implode(', ', $snapshot->navigatorLanguages);
+
+        $this->logVerbose($configuration, sprintf('  %s requested: %s', $label, $snapshot->pageUrl));
+        $this->logVerbose($configuration, sprintf('  %s final: %s', $label, $snapshot->finalUrl !== '' ? $snapshot->finalUrl : $snapshot->pageUrl));
+        $this->logVerbose($configuration, sprintf('  %s status: %d', $label, $snapshot->httpStatus));
+        $this->logVerbose($configuration, sprintf('  %s title: %s', $label, $snapshot->title !== '' ? $snapshot->title : '-'));
+        $this->logVerbose($configuration, sprintf('  %s navigator.language: %s', $label, $snapshot->navigatorLanguage !== '' ? $snapshot->navigatorLanguage : '-'));
+        $this->logVerbose($configuration, sprintf('  %s navigator.languages: %s', $label, $languages));
     }
 }

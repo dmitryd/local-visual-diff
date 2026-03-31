@@ -227,10 +227,13 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
 
         return new PageSnapshot(
             $url,
+            (string) ($spec['finalUrl'] ?? $url),
             (string) ($spec['title'] ?? ''),
             (int) ($spec['httpStatus'] ?? 200),
             $imagePath,
-            (int) ($spec['pageHeight'] ?? 600)
+            (int) ($spec['pageHeight'] ?? 600),
+            (string) ($spec['navigatorLanguage'] ?? ''),
+            is_array($spec['navigatorLanguages'] ?? null) ? array_values($spec['navigatorLanguages']) : []
         );
     }
 
