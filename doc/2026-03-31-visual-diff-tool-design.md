@@ -264,7 +264,6 @@ Recommended options:
 - `--context-padding=200`
 - `--shift-tolerance=0`
 - `--color-threshold=0`
-- `--crawl-homepage-links=0`
 - `--ignored-query-param-name-pattern=""`
 - `--max-pages=0`
 - `--capture-matching-screenshots=0`
@@ -279,10 +278,9 @@ Required positional arguments:
 
 - `--shift-tolerance=0` means pixel-perfect layout matching.
 - `--shift-tolerance=3` means small local offsets up to 3 pixels should be tolerated.
-- `--crawl-homepage-links=0` means compare only `/`.
-- `--crawl-homepage-links=1` means recursively compare `/` plus same-origin pages discovered from the baseline crawl.
 - `--ignored-query-param-name-pattern` defines a regular expression for query parameter names that should be stripped before deduplication and fetch.
 - `--max-pages=0` means no explicit page cap after deduplication.
+- `--max-pages=1` effectively limits the run to the homepage and skips recursive crawl expansion.
 - `--max-fullpage-height=0` means there is no explicit page-height limit before fallback logic is considered.
 - `--max-fullpage-height=<n>` means pages taller than `n` pixels should switch to the large-page fallback strategy.
 - `--context-padding=200` means focused fallback artifacts should include 200 pixels of surrounding context above and below the detected changed region.
@@ -313,7 +311,7 @@ color_threshold = 0
 overlay_opacity = 0.5
 
 [crawl]
-crawl_homepage_links = false
+crawl_homepage_links = true
 ignored_query_param_name_pattern = ""
 max_pages = 0
 
@@ -330,6 +328,7 @@ overwrite = false
 - base URLs should still be provided explicitly by CLI in the first version
 - browser and comparison defaults should come from the INI file
 - CLI options should always override INI values for that run
+- recursive crawl should be enabled by default
 - invalid or missing config values should fail early with a clear message
 - `config/defaults.ini` should be committed to the repository and serve as the baseline shared defaults file
 - `config/local.ini` should be optional and intended for machine-specific overrides such as browser path, OS-specific executable names, and local output preferences

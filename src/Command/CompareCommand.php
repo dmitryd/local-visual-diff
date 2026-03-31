@@ -56,7 +56,6 @@ final class CompareCommand extends Command
             ->addOption('context-padding', null, InputOption::VALUE_REQUIRED, 'Padding around a large-page context artifact.')
             ->addOption('shift-tolerance', null, InputOption::VALUE_REQUIRED, 'Pixel shift tolerance for comparison.')
             ->addOption('color-threshold', null, InputOption::VALUE_REQUIRED, 'Color threshold for pixel comparison.')
-            ->addOption('crawl-homepage-links', null, InputOption::VALUE_NONE, 'Enable homepage link crawling for later phases.')
             ->addOption('ignored-query-param-name-pattern', null, InputOption::VALUE_REQUIRED, 'Regex for query parameter names that should be removed during crawl deduplication.')
             ->addOption('max-pages', null, InputOption::VALUE_REQUIRED, 'Maximum number of pages to compare.')
             ->addOption('capture-matching-screenshots', null, InputOption::VALUE_NONE, 'Keep screenshots for matching pages.')
@@ -135,7 +134,6 @@ final class CompareCommand extends Command
             'context_padding' => $input->getOption('context-padding'),
             'shift_tolerance' => $input->getOption('shift-tolerance'),
             'color_threshold' => $input->getOption('color-threshold'),
-            'crawl_homepage_links' => $input->getOption('crawl-homepage-links'),
             'ignored_query_param_name_pattern' => $input->getOption('ignored-query-param-name-pattern'),
             'max_pages' => $input->getOption('max-pages'),
             'capture_matching_screenshots' => $input->getOption('capture-matching-screenshots'),

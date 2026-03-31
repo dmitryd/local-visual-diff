@@ -40,7 +40,7 @@ color_threshold = 0
 overlay_opacity = 0.5
 
 [crawl]
-crawl_homepage_links = false
+crawl_homepage_links = true
 ignored_query_param_name_pattern = ""
 max_pages = 0
 
@@ -68,6 +68,7 @@ INI);
         self::assertSame(1440, $config->viewportWidth);
         self::assertSame(900, $config->viewportHeight);
         self::assertSame('var/results', $config->outputDir);
+        self::assertTrue($config->crawlHomepageLinks);
         self::assertSame('', $config->ignoredQueryParamNamePattern);
         self::assertFalse($config->captureMatchingScreenshots);
     }

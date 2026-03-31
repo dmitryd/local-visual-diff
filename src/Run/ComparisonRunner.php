@@ -100,6 +100,10 @@ final class ComparisonRunner
             return false;
         }
 
+        if ($configuration->maxPages === 1) {
+            return false;
+        }
+
         return !in_array($homepageResult->status, ['http_error', 'runtime_error'], true);
     }
 

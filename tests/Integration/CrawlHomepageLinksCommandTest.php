@@ -68,7 +68,6 @@ HTML,
             $tester->execute([
                 'baseline-base-url' => 'http://legacy.local',
                 'candidate-base-url' => 'http://upgraded.local',
-                '--crawl-homepage-links' => true,
                 '--capture-matching-screenshots' => false,
             ]);
 
@@ -121,7 +120,6 @@ HTML,
             $tester->execute([
                 'baseline-base-url' => 'http://legacy.local',
                 'candidate-base-url' => 'http://upgraded.local',
-                '--crawl-homepage-links' => true,
                 '--ignored-query-param-name-pattern' => '/^tx_solr\\[/',
             ]);
 
@@ -130,6 +128,47 @@ HTML,
             $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
             self::assertSame(2, $report['summary']['totalPages']);
             self::assertSame(['/', '/search?category=cards'], array_column($report['results'], 'path'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testMaxPagesOneKeepsTheRunAtHomepageOnly(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/about">About</a>
+    <a href="/contact">Contact</a>
+  </body>
+</html>
+HTML,
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--max-pages' => 1,
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['totalPages']);
+            self::assertSame(['/'], array_column($report['results'], 'path'));
         } finally {
             $this->removeDirectoryIfExists($outputDir);
         }
@@ -165,7 +204,6 @@ HTML,
             $tester->execute([
                 'baseline-base-url' => 'http://legacy.local',
                 'candidate-base-url' => 'http://upgraded.local',
-                '--crawl-homepage-links' => true,
             ]);
 
             self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
