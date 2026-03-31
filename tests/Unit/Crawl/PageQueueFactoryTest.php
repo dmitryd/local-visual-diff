@@ -45,16 +45,28 @@ final class PageQueueFactoryTest extends TestCase
 final class FixturePageQueueLinkExtractor extends LinkExtractor
 {
     /**
-     * @param array<string, string> $htmlByUrl
+     * @param array<string, string|array{html:string, finalUrl?:string}> $documentsByUrl
      */
-    public function __construct(private readonly array $htmlByUrl)
+    public function __construct(private readonly array $documentsByUrl)
     {
     }
 
-    protected function fetchHtml(string $pageUrl, bool $verifyTls = true): string
+    protected function fetchDocument(string $pageUrl, bool $verifyTls = true): array
     {
         unset($verifyTls);
 
-        return $this->htmlByUrl[$pageUrl] ?? '';
+        $document = $this->documentsByUrl[$pageUrl] ?? '';
+
+        if (is_array($document)) {
+            return [
+                'html' => $document['html'],
+                'finalUrl' => $document['finalUrl'] ?? $pageUrl,
+            ];
+        }
+
+        return [
+            'html' => (string) $document,
+            'finalUrl' => $pageUrl,
+        ];
     }
 }

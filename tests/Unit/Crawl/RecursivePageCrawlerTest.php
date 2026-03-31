@@ -31,6 +31,52 @@ final class RecursivePageCrawlerTest extends TestCase
         );
     }
 
+    public function testCrawlerResolvesRelativeLinksAgainstRedirectedDocumentUrl(): void
+    {
+        $crawler = new RecursivePageCrawler(
+            new FixtureRecursiveLinkExtractor([
+                'http://legacy.local' => [
+                    'html' => '<a href="about">About</a>',
+                    'finalUrl' => 'http://legacy.local/en/',
+                ],
+                'http://legacy.local/en/about' => [
+                    'html' => '',
+                    'finalUrl' => 'http://legacy.local/en/about',
+                ],
+            ]),
+            new UrlMapper(),
+            new UrlNormalizer()
+        );
+
+        self::assertSame(
+            ['/', '/en/about'],
+            $crawler->crawl('http://legacy.local', '', true, 0)
+        );
+    }
+
+    public function testCrawlerUsesDocumentBaseHrefWhenResolvingRelativeLinks(): void
+    {
+        $crawler = new RecursivePageCrawler(
+            new FixtureRecursiveLinkExtractor([
+                'http://legacy.local' => [
+                    'html' => '<base href="/de/"><a href="contact">Contact</a>',
+                    'finalUrl' => 'http://legacy.local/en/',
+                ],
+                'http://legacy.local/de/contact' => [
+                    'html' => '',
+                    'finalUrl' => 'http://legacy.local/de/contact',
+                ],
+            ]),
+            new UrlMapper(),
+            new UrlNormalizer()
+        );
+
+        self::assertSame(
+            ['/', '/de/contact'],
+            $crawler->crawl('http://legacy.local', '', true, 0)
+        );
+    }
+
     public function testCrawlerDeduplicatesTargetsAfterIgnoringConfiguredQueryParameters(): void
     {
         $crawler = new RecursivePageCrawler(
@@ -66,16 +112,28 @@ final class RecursivePageCrawlerTest extends TestCase
 final class FixtureRecursiveLinkExtractor extends LinkExtractor
 {
     /**
-     * @param array<string, string> $htmlByUrl
+     * @param array<string, string|array{html:string, finalUrl?:string}> $documentsByUrl
      */
-    public function __construct(private readonly array $htmlByUrl)
+    public function __construct(private readonly array $documentsByUrl)
     {
     }
 
-    protected function fetchHtml(string $pageUrl, bool $verifyTls = true): string
+    protected function fetchDocument(string $pageUrl, bool $verifyTls = true): array
     {
         unset($verifyTls);
 
-        return $this->htmlByUrl[$pageUrl] ?? '';
+        $document = $this->documentsByUrl[$pageUrl] ?? '';
+
+        if (is_array($document)) {
+            return [
+                'html' => $document['html'],
+                'finalUrl' => $document['finalUrl'] ?? $pageUrl,
+            ];
+        }
+
+        return [
+            'html' => (string) $document,
+            'finalUrl' => $pageUrl,
+        ];
     }
 }

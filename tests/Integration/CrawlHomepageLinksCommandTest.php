@@ -224,6 +224,97 @@ HTML,
         }
     }
 
+    public function testCrawlUsesRedirectedDocumentUrlForRelativeLinks(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'html' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="about">About</a>
+  </body>
+</html>
+HTML,
+                        'finalUrl' => 'http://legacy.local/en/',
+                    ],
+                    'http://legacy.local/en/about' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600, 'finalUrl' => 'http://legacy.local/en/'],
+                    'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://legacy.local/en/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/en/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(['/', '/en/about'], array_column($report['results'], 'path'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testCrawlUsesBaseHrefForRelativeLinks(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'html' => <<<'HTML'
+<!doctype html>
+<html>
+  <head>
+    <base href="/de/">
+  </head>
+  <body>
+    <a href="contact">Contact</a>
+  </body>
+</html>
+HTML,
+                        'finalUrl' => 'http://legacy.local/en/',
+                    ],
+                    'http://legacy.local/de/contact' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600, 'finalUrl' => 'http://legacy.local/en/'],
+                    'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://legacy.local/de/contact' => ['title' => 'Contact', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/de/contact' => ['title' => 'Contact', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(['/', '/de/contact'], array_column($report['results'], 'path'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     /**
      * @param array<string, string>              $htmlByUrl
      * @param array<string, array<string, mixed>> $snapshots
@@ -285,21 +376,33 @@ HTML,
 final class FixtureLinkExtractor extends LinkExtractor
 {
     /**
-     * @param array<string, string> $htmlByUrl
+     * @param array<string, string|array{html:string, finalUrl?:string}> $documentsByUrl
      */
-    public function __construct(private readonly array $htmlByUrl)
+    public function __construct(private readonly array $documentsByUrl)
     {
     }
 
-    protected function fetchHtml(string $pageUrl, bool $verifyTls = true): string
+    protected function fetchDocument(string $pageUrl, bool $verifyTls = true): array
     {
         unset($verifyTls);
 
-        if (!array_key_exists($pageUrl, $this->htmlByUrl)) {
+        if (!array_key_exists($pageUrl, $this->documentsByUrl)) {
             throw new RuntimeException(sprintf('No fixture HTML configured for %s', $pageUrl));
         }
 
-        return $this->htmlByUrl[$pageUrl];
+        $document = $this->documentsByUrl[$pageUrl];
+
+        if (is_array($document)) {
+            return [
+                'html' => $document['html'],
+                'finalUrl' => $document['finalUrl'] ?? $pageUrl,
+            ];
+        }
+
+        return [
+            'html' => $document,
+            'finalUrl' => $pageUrl,
+        ];
     }
 }
 

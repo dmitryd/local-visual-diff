@@ -103,9 +103,12 @@ final class CompareCommand extends Command
                 maxPages: $config->maxPages,
                 captureMatchingScreenshots: $config->captureMatchingScreenshots,
                 overwrite: $config->overwrite,
-                verbose: $output->isVerbose(),
-                veryVerbose: $output->isVeryVerbose(),
-                profile: (bool) $input->getOption('profile')
+                verbose: !$output->isQuiet(),
+                veryVerbose: $output->isVerbose(),
+                profile: (bool) $input->getOption('profile'),
+                consoleWriter: static function (string $message) use ($output): void {
+                    $output->writeln($message);
+                }
             );
 
             $summary = $this->runner->run($runConfiguration);

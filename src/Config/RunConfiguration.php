@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LocalVisualDiff\Config;
 
+use Closure;
 use RuntimeException;
 
 /**
@@ -39,7 +40,8 @@ final class RunConfiguration
         public readonly bool $overwrite = false,
         public readonly bool $verbose = false,
         public readonly bool $veryVerbose = false,
-        public readonly bool $profile = false
+        public readonly bool $profile = false,
+        public readonly ?Closure $consoleWriter = null
     ) {
     }
 

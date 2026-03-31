@@ -47,15 +47,21 @@ final class RecursivePageCrawler
             $currentPageUrl = $this->urlMapper->joinBaseUrlAndTarget($baselineBaseUrl, $currentTarget);
 
             try {
-                $hrefs = $this->linkExtractor->extract($currentPageUrl, $fetchVerifyTls);
+                $document = $this->linkExtractor->extractDocument($currentPageUrl, $fetchVerifyTls);
             } catch (Throwable) {
                 continue;
             }
 
-            foreach ($hrefs as $href) {
+            $documentBaseUrl = $this->urlMapper->effectiveDocumentBaseUrl(
+                $currentPageUrl,
+                $document->finalUrl,
+                $document->baseHref
+            );
+
+            foreach ($document->hrefs as $href) {
                 $target = $this->urlMapper->toTarget(
                     $baselineBaseUrl,
-                    $currentPageUrl,
+                    $documentBaseUrl,
                     $href,
                     $ignoredQueryParamNamePattern
                 );

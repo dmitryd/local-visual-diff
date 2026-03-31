@@ -14,6 +14,7 @@ use LocalVisualDiff\Run\ComparisonRunner;
 use LocalVisualDiff\Support\Clock;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 
 /**
@@ -120,6 +121,119 @@ final class CompareHomepageCommandTest extends TestCase
             $html = file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.html');
             self::assertIsString($html);
             self::assertStringContainsString('Context', $html);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testDefaultOutputShowsProgressAndReportPath(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing /', $tester->getDisplay());
+            self::assertStringContainsString('Report written to', $tester->getDisplay());
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testQuietOutputSuppressesProgressAndReportPath(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ], ['verbosity' => OutputInterface::VERBOSITY_QUIET]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertSame('', $tester->getDisplay());
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testVerboseOutputShowsSnapshotDiagnostics(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                        'finalUrl' => 'http://legacy.local/de/',
+                        'navigatorLanguage' => 'de',
+                        'navigatorLanguages' => ['de', 'en'],
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                        'finalUrl' => 'http://upgraded.local/de/',
+                        'navigatorLanguage' => 'de',
+                        'navigatorLanguages' => ['de', 'en'],
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing /', $tester->getDisplay());
+            self::assertStringContainsString('Baseline requested: http://legacy.local', $tester->getDisplay());
+            self::assertStringContainsString('Baseline final: http://legacy.local/de/', $tester->getDisplay());
+            self::assertStringContainsString('Baseline navigator.language: de', $tester->getDisplay());
+            self::assertStringContainsString('Report written to', $tester->getDisplay());
         } finally {
             $this->removeDirectoryIfExists($outputDir);
         }

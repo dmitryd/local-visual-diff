@@ -92,6 +92,36 @@ final class UrlMapper
     }
 
     /**
+     * Decide which URL should be treated as the document base for relative
+     * links discovered in a fetched HTML document.
+     *
+     * Browser behavior is:
+     * - redirects change the effective document URL
+     * - `<base href>` overrides relative URL resolution when present
+     * - invalid base tags are ignored
+     *
+     * This helper mirrors that order while keeping a safe fallback to the
+     * originally requested URL if anything is missing.
+     */
+    public function effectiveDocumentBaseUrl(string $requestedUrl, string $finalUrl, string $baseHref): string
+    {
+        $documentUrl = trim($finalUrl) !== '' ? trim($finalUrl) : $requestedUrl;
+        $baseHref = trim($baseHref);
+
+        if ($baseHref === '') {
+            return $documentUrl;
+        }
+
+        $resolvedBaseUrl = $this->resolveUrl($documentUrl, $baseHref);
+
+        if ($resolvedBaseUrl === null) {
+            return $documentUrl;
+        }
+
+        return $resolvedBaseUrl;
+    }
+
+    /**
      * Resolve a href against the current page URL.
      *
      * Recursive crawling cannot resolve every link against the site root,

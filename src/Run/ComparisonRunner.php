@@ -86,7 +86,7 @@ final class ComparisonRunner
             $this->filesystem->writeJson($reportJsonPath, $viewModel);
         });
 
-        $this->logProfile($profiler);
+        $this->logProfile($configuration, $profiler);
 
         return $summary;
     }
@@ -365,9 +365,10 @@ final class ComparisonRunner
     }
 
     /**
-     * Emit lightweight progress messages only when the command is running in
-     * Symfony verbose mode. This keeps default output clean while still giving
-     * visibility into which page is being processed right now.
+     * Emit lightweight progress messages during normal runs.
+     *
+     * Long-running crawls should visibly advance by default. Symfony quiet mode
+     * disables these lines.
      */
     private function logVerbose(RunConfiguration $configuration, string $message): void
     {
@@ -375,7 +376,7 @@ final class ComparisonRunner
             return;
         }
 
-        fwrite(STDOUT, $message . PHP_EOL);
+        $this->emitConsoleLine($configuration, $message);
     }
 
     private function logSnapshotDiagnostics(RunConfiguration $configuration, string $label, \LocalVisualDiff\Browser\PageSnapshot $snapshot): void
@@ -396,10 +397,25 @@ final class ComparisonRunner
         $this->logVerbose($configuration, sprintf('  %s navigator.languages: %s', $label, $languages));
     }
 
-    private function logProfile(RunProfiler $profiler): void
+    private function logProfile(RunConfiguration $configuration, RunProfiler $profiler): void
     {
-        foreach ($profiler->formatLines() as $line) {
-            fwrite(STDOUT, $line . PHP_EOL);
+        if (!$configuration->verbose) {
+            return;
         }
+
+        foreach ($profiler->formatLines() as $line) {
+            $this->emitConsoleLine($configuration, $line);
+        }
+    }
+
+    private function emitConsoleLine(RunConfiguration $configuration, string $message): void
+    {
+        if ($configuration->consoleWriter instanceof \Closure) {
+            ($configuration->consoleWriter)($message);
+
+            return;
+        }
+
+        fwrite(STDOUT, $message . PHP_EOL);
     }
 }
