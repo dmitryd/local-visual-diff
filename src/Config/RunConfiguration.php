@@ -32,7 +32,7 @@ final class RunConfiguration
         public readonly float $overlayOpacity = 0.5,
         public readonly bool $crawlHomepageLinks = true,
         public readonly string $ignoredQueryParamNamePattern = '',
-        public readonly bool $crawlFetchVerifyTls = true,
+        public readonly bool $crawlFetchVerifyTls = false,
         public readonly int $maxPages = 0,
         public readonly bool $captureMatchingScreenshots = false,
         public readonly bool $overwrite = false,
@@ -70,7 +70,7 @@ final class RunConfiguration
             overlayOpacity: self::floatValue($settings, ['compare', 'overlay_opacity'], 0.5),
             crawlHomepageLinks: self::boolValue($settings, ['crawl', 'crawl_homepage_links'], true),
             ignoredQueryParamNamePattern: self::regexValue($settings, ['crawl', 'ignored_query_param_name_pattern'], ''),
-            crawlFetchVerifyTls: self::boolValue($settings, ['crawl', 'fetch_verify_tls'], true),
+            crawlFetchVerifyTls: self::boolValue($settings, ['crawl', 'fetch_verify_tls'], false),
             maxPages: self::intValue($settings, ['crawl', 'max_pages'], 0),
             captureMatchingScreenshots: self::boolValue($settings, ['run', 'capture_matching_screenshots'], false),
             overwrite: self::boolValue($settings, ['run', 'overwrite'], false)
