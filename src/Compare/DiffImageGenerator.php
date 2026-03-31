@@ -15,9 +15,9 @@ use ImagickPixel;
 final class DiffImageGenerator
 {
     /**
-     * @param array<int, array{0:int, 1:int}> $changedPixels
+     * @param array<int, array{y:int,startX:int,endX:int}> $changedRuns
      */
-    public function generate(Imagick $baselineImage, array $changedPixels, string $outputPath): string
+    public function generate(Imagick $baselineImage, array $changedRuns, string $outputPath): string
     {
         $this->ensureDirectoryExists($outputPath);
 
@@ -28,8 +28,8 @@ final class DiffImageGenerator
         $draw = new ImagickDraw();
         $draw->setFillColor($highlight);
 
-        foreach ($changedPixels as [$x, $y]) {
-            $draw->point($x, $y);
+        foreach ($changedRuns as $run) {
+            $draw->line($run['startX'], $run['y'], $run['endX'], $run['y']);
         }
 
         $image->drawImage($draw);

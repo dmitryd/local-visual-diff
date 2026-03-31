@@ -48,7 +48,7 @@ final class ImageComparator
 
         $comparison = $this->comparePixels($normalizedBaseline, $normalizedCandidate, $shiftTolerance, $colorThreshold);
         $changedPixels = $comparison['changedPixels'];
-        $changedCoordinates = $comparison['changedCoordinates'];
+        $changedRuns = $comparison['changedRuns'];
         $pixelCount = $width * $height;
         $status = $changedPixels === 0 ? 'matching' : 'different';
         $artifacts = [];
@@ -58,7 +58,7 @@ final class ImageComparator
                 $artifactDirectory,
                 $normalizedBaseline,
                 $normalizedCandidate,
-                $changedCoordinates,
+                $changedRuns,
                 $pageHeight,
                 $maxFullpageHeight,
                 $contextPadding
@@ -76,7 +76,7 @@ final class ImageComparator
     }
 
     /**
-     * @return array{changedPixels:int, changedCoordinates: array<int, array{0:int,1:int}>}
+     * @return array{changedPixels:int, changedRuns: array<int, array{y:int,startX:int,endX:int}>}
      */
     private function comparePixels(
         Imagick $baselineImage,
@@ -88,18 +88,28 @@ final class ImageComparator
         $height = $baselineImage->getImageHeight();
 
         $matchedBaselinePixels = str_repeat("\0", intdiv(($width * $height) + 7, 8));
-        $changedCoordinates = [];
+        $changedRuns = [];
         $changedPixels = 0;
         $baselineRowCache = [];
 
         for ($y = 0; $y < $height; $y++) {
             $candidateRow = $this->exportRowPixels($candidateImage, $width, $y);
             $baselineRow = $this->baselineRow($baselineImage, $baselineRowCache, $width, $y, $shiftTolerance);
+            $runStartX = null;
 
             for ($x = 0; $x < $width; $x++) {
                 $pixelIndex = ($y * $width) + $x;
 
                 if ($this->pixelsMatchAtSamePosition($baselineRow, $candidateRow, $x, $colorThreshold)) {
+                    if ($runStartX !== null) {
+                        $changedRuns[] = [
+                            'y' => $y,
+                            'startX' => $runStartX,
+                            'endX' => $x - 1,
+                        ];
+                        $runStartX = null;
+                    }
+
                     continue;
                 }
 
@@ -118,11 +128,29 @@ final class ImageComparator
 
                 if ($matchIndex !== null) {
                     $this->markPixelAsUsed($matchedBaselinePixels, $matchIndex);
+
+                    if ($runStartX !== null) {
+                        $changedRuns[] = [
+                            'y' => $y,
+                            'startX' => $runStartX,
+                            'endX' => $x - 1,
+                        ];
+                        $runStartX = null;
+                    }
+
                     continue;
                 }
 
                 $changedPixels++;
-                $changedCoordinates[] = [$x, $y];
+                $runStartX ??= $x;
+            }
+
+            if ($runStartX !== null) {
+                $changedRuns[] = [
+                    'y' => $y,
+                    'startX' => $runStartX,
+                    'endX' => $width - 1,
+                ];
             }
 
             $this->pruneBaselineRowCache($baselineRowCache, $y, $shiftTolerance);
@@ -130,7 +158,7 @@ final class ImageComparator
 
         return [
             'changedPixels' => $changedPixels,
-            'changedCoordinates' => $changedCoordinates,
+            'changedRuns' => $changedRuns,
         ];
     }
 
@@ -308,14 +336,14 @@ final class ImageComparator
     }
 
     /**
-     * @param array<int, array{0:int,1:int}> $changedCoordinates
+     * @param array<int, array{y:int,startX:int,endX:int}> $changedRuns
      * @return array<string, ?string>
      */
     private function writeArtifacts(
         string $artifactDirectory,
         Imagick $baselineImage,
         Imagick $candidateImage,
-        array $changedCoordinates,
+        array $changedRuns,
         int $pageHeight,
         int $maxFullpageHeight,
         int $contextPadding
@@ -337,12 +365,12 @@ final class ImageComparator
         $candidateImage->writeImage($candidatePath);
 
         $this->overlayGenerator->generate($baselineImage, $candidateImage, $overlayPath);
-        $this->diffImageGenerator->generate($baselineImage, $changedCoordinates, $diffPath);
+        $this->diffImageGenerator->generate($baselineImage, $changedRuns, $diffPath);
 
         $contextPath = null;
 
         if ($pageHeight > 0 && $maxFullpageHeight > 0 && $pageHeight > $maxFullpageHeight) {
-            $bounds = $this->changedCoordinateBounds($changedCoordinates);
+            $bounds = $this->changedRunBounds($changedRuns);
 
             if ($bounds !== null) {
                 $contextPath = $artifactDirectory . DIRECTORY_SEPARATOR . 'context.png';
@@ -367,19 +395,20 @@ final class ImageComparator
     }
 
     /**
-     * @param array<int, array{0:int,1:int}> $changedCoordinates
+     * @param array<int, array{y:int,startX:int,endX:int}> $changedRuns
      * @return array{minY:int,maxY:int}|null
      */
-    private function changedCoordinateBounds(array $changedCoordinates): ?array
+    private function changedRunBounds(array $changedRuns): ?array
     {
-        if ($changedCoordinates === []) {
+        if ($changedRuns === []) {
             return null;
         }
 
-        $minY = $changedCoordinates[0][1];
-        $maxY = $changedCoordinates[0][1];
+        $minY = $changedRuns[0]['y'];
+        $maxY = $changedRuns[0]['y'];
 
-        foreach ($changedCoordinates as [, $y]) {
+        foreach ($changedRuns as $run) {
+            $y = $run['y'];
             $minY = min($minY, $y);
             $maxY = max($maxY, $y);
         }
