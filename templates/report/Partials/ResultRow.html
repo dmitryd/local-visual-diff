@@ -1,0 +1,63 @@
+<f:comment>
+    Each row is intentionally verbose in markup so the table stays easy to scan
+    and the different artifact states remain obvious during review.
+</f:comment>
+
+<tr class="result-row result-row--{result.statusClass}">
+    <td class="status-col">
+        <span class="status-dot {result.statusClass}" title="{result.statusLabel}" aria-label="{result.statusLabel}"></span>
+    </td>
+    <td>
+        <span class="status-text">{result.statusLabel}</span>
+    </td>
+    <td class="page-cell">
+        <p class="page-title">{result.title}</p>
+        <p class="page-path">{result.path}</p>
+    </td>
+    <td>
+        <a class="page-link" href="{result.baselineUrl}" target="_blank" rel="noreferrer noopener">Baseline</a>
+    </td>
+    <td>
+        <a class="page-link" href="{result.candidateUrl}" target="_blank" rel="noreferrer noopener">Candidate</a>
+    </td>
+    <td>
+        <f:if condition="{result.baselineScreenshotUrl}">
+            <f:then>
+                <a class="artifact-link" href="{result.baselineScreenshotUrl}" target="_blank" rel="noreferrer noopener">Baseline shot</a>
+            </f:then>
+            <f:else>
+                <span class="empty-cell">-</span>
+            </f:else>
+        </f:if>
+    </td>
+    <td>
+        <f:if condition="{result.candidateScreenshotUrl}">
+            <f:then>
+                <a class="artifact-link" href="{result.candidateScreenshotUrl}" target="_blank" rel="noreferrer noopener">Candidate shot</a>
+            </f:then>
+            <f:else>
+                <span class="empty-cell">-</span>
+            </f:else>
+        </f:if>
+    </td>
+    <td>
+        <f:if condition="{result.diffUrl}">
+            <f:then>
+                <a class="artifact-link" href="{result.diffUrl}" target="_blank" rel="noreferrer noopener">Diff</a>
+            </f:then>
+            <f:else>
+                <span class="empty-cell">-</span>
+            </f:else>
+        </f:if>
+    </td>
+    <td>
+        <f:if condition="{result.contextUrl}">
+            <f:then>
+                <a class="artifact-link" href="{result.contextUrl}" target="_blank" rel="noreferrer noopener">Context</a>
+            </f:then>
+            <f:else>
+                <span class="empty-cell">-</span>
+            </f:else>
+        </f:if>
+    </td>
+</tr>

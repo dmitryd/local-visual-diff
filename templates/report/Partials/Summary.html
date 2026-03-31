@@ -1,0 +1,52 @@
+<f:comment>
+    Summary cards keep the top of the report readable while still surfacing the
+    essential run metadata needed during visual review.
+</f:comment>
+
+<div class="summary">
+    <div class="summary-item">
+        <span class="summary-label">Baseline</span>
+        <span class="summary-value">{summary.baselineBaseUrl}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Candidate</span>
+        <span class="summary-value">{summary.candidateBaseUrl}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Generated at</span>
+        <span class="summary-value">{summary.generatedAt}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Pages</span>
+        <span class="summary-value">{summary.totalPages}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Matching</span>
+        <span class="summary-value">{summary.matchingPages}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Different</span>
+        <span class="summary-value">{summary.differentPages}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">HTTP errors</span>
+        <span class="summary-value">{summary.httpErrorPages}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Runtime errors</span>
+        <span class="summary-value">{summary.runtimeErrorPages}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Shift tolerance</span>
+        <span class="summary-value">{summary.shiftTolerance}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Matching screenshots</span>
+        <span class="summary-value">
+            <f:if condition="{summary.captureMatchingScreenshots}">
+                <f:then>enabled</f:then>
+                <f:else>disabled</f:else>
+            </f:if>
+        </span>
+    </div>
+</div>
