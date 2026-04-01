@@ -147,11 +147,15 @@ final class CompareHomepageCommandTest extends TestCase
                         'title' => 'Home',
                         'httpStatus' => 200,
                         'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
                     ],
                     'http://upgraded.local' => [
                         'title' => 'Home',
                         'httpStatus' => 200,
                         'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
                     ],
                 ]
             );
@@ -163,8 +167,46 @@ final class CompareHomepageCommandTest extends TestCase
             ]);
 
             self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
-            self::assertStringContainsString('Comparing /', $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... matching', $tester->getDisplay());
             self::assertStringContainsString('Report written to', $tester->getDisplay());
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testDefaultOutputShowsDifferentResultWhenHomepageDiffers(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'red'],
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... different', $tester->getDisplay());
         } finally {
             $this->removeDirectoryIfExists($outputDir);
         }
@@ -238,7 +280,7 @@ final class CompareHomepageCommandTest extends TestCase
             ], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE]);
 
             self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
-            self::assertStringContainsString('Comparing /', $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... matching', $tester->getDisplay());
             self::assertStringContainsString('Baseline requested: http://legacy.local', $tester->getDisplay());
             self::assertStringContainsString('Baseline final: http://legacy.local/de/', $tester->getDisplay());
             self::assertStringContainsString('Baseline navigator.language: de', $tester->getDisplay());

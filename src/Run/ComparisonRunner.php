@@ -47,8 +47,8 @@ final class ComparisonRunner
 
         $generatedAt = $this->clock->formattedNow();
         $pageResults = [];
-        $this->logVerbose($configuration, sprintf('Comparing %s', '/'));
         $homepageResult = $this->comparePage($configuration, $outputDir, '/', $profiler);
+        $this->logPageResult($configuration, $homepageResult);
         $pageResults[] = $homepageResult;
 
         if ($this->shouldCrawlAdditionalPages($configuration, $homepageResult)) {
@@ -68,8 +68,9 @@ final class ComparisonRunner
                     continue;
                 }
 
-                $this->logVerbose($configuration, sprintf('Comparing %s', $path));
-                $pageResults[] = $this->comparePage($configuration, $outputDir, $path, $profiler);
+                $pageResult = $this->comparePage($configuration, $outputDir, $path, $profiler);
+                $this->logPageResult($configuration, $pageResult);
+                $pageResults[] = $pageResult;
             }
         }
 
@@ -413,6 +414,58 @@ final class ComparisonRunner
         $this->logVerbose($configuration, sprintf('  %s title: %s', $label, $snapshot->title !== '' ? $snapshot->title : '-'));
         $this->logVerbose($configuration, sprintf('  %s navigator.language: %s', $label, $snapshot->navigatorLanguage !== '' ? $snapshot->navigatorLanguage : '-'));
         $this->logVerbose($configuration, sprintf('  %s navigator.languages: %s', $label, $languages));
+    }
+
+    private function logPageResult(RunConfiguration $configuration, PageResult $pageResult): void
+    {
+        if (!$configuration->verbose) {
+            return;
+        }
+
+        $statusLabel = $this->statusLabel($pageResult);
+
+        if ($configuration->decoratedOutput) {
+            $statusLabel = $this->colorizedStatusLabel($pageResult, $statusLabel);
+        }
+
+        $this->emitConsoleLine(
+            $configuration,
+            sprintf('Comparing %s ... %s', $pageResult->path, $statusLabel)
+        );
+    }
+
+    private function statusLabel(PageResult $pageResult): string
+    {
+        return match ($pageResult->status) {
+            'matching' => 'matching',
+            'different' => 'different',
+            'http_error' => $this->httpErrorLabel($pageResult),
+            'runtime_error' => 'runtime error',
+            default => $pageResult->status,
+        };
+    }
+
+    private function httpErrorLabel(PageResult $pageResult): string
+    {
+        if ($pageResult->httpStatusBaseline >= 400) {
+            return sprintf('HTTP error %d', $pageResult->httpStatusBaseline);
+        }
+
+        if ($pageResult->httpStatusCandidate >= 400) {
+            return sprintf('HTTP error %d', $pageResult->httpStatusCandidate);
+        }
+
+        return 'HTTP error';
+    }
+
+    private function colorizedStatusLabel(PageResult $pageResult, string $statusLabel): string
+    {
+        return match ($pageResult->status) {
+            'matching' => sprintf('<fg=green>%s</>', $statusLabel),
+            'different' => sprintf('<fg=yellow>%s</>', $statusLabel),
+            'http_error', 'runtime_error' => sprintf('<fg=red>%s</>', $statusLabel),
+            default => $statusLabel,
+        };
     }
 
     private function logProfile(RunConfiguration $configuration, RunProfiler $profiler): void

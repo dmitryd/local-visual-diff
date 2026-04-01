@@ -41,6 +41,7 @@ final class RunConfiguration
         public readonly bool $overwrite = false,
         public readonly bool $verbose = false,
         public readonly bool $veryVerbose = false,
+        public readonly bool $decoratedOutput = false,
         public readonly bool $profile = false,
         public readonly ?Closure $consoleWriter = null
     ) {

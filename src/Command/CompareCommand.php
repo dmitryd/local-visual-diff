@@ -107,6 +107,7 @@ final class CompareCommand extends Command
                 overwrite: $config->overwrite,
                 verbose: !$output->isQuiet(),
                 veryVerbose: $output->isVerbose(),
+                decoratedOutput: $output->isDecorated(),
                 profile: (bool) $input->getOption('profile'),
                 consoleWriter: static function (string $message) use ($output): void {
                     $output->writeln($message);
