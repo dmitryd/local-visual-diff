@@ -174,6 +174,42 @@ final class CompareHomepageCommandTest extends TestCase
         }
     }
 
+    public function testBaseUrlArgumentsWithPathsAreTrimmedToOriginsWithWarning(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local/de/',
+                'candidate-base-url' => 'http://upgraded.local/de/',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Warning: baseline URL contains path/query/fragment "/de/"; using base URL http://legacy.local', $tester->getDisplay());
+            self::assertStringContainsString('Warning: candidate URL contains path/query/fragment "/de/"; using base URL http://upgraded.local', $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... matching', $tester->getDisplay());
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testDefaultOutputShowsDifferentResultWhenHomepageDiffers(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';

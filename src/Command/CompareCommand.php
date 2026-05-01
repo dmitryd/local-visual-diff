@@ -69,8 +69,14 @@ final class CompareCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         try {
-            $baselineBaseUrl = $this->urlNormalizer->normalizeBaseUrl((string) $input->getArgument('baseline-base-url'));
-            $candidateBaseUrl = $this->urlNormalizer->normalizeBaseUrl((string) $input->getArgument('candidate-base-url'));
+            $rawBaselineBaseUrl = (string) $input->getArgument('baseline-base-url');
+            $rawCandidateBaseUrl = (string) $input->getArgument('candidate-base-url');
+            $baselineBaseUrl = $this->urlNormalizer->normalizeBaseUrl($rawBaselineBaseUrl);
+            $candidateBaseUrl = $this->urlNormalizer->normalizeBaseUrl($rawCandidateBaseUrl);
+
+            $this->warnIfBaseUrlWasTrimmed($output, 'baseline', $rawBaselineBaseUrl, $baselineBaseUrl);
+            $this->warnIfBaseUrlWasTrimmed($output, 'candidate', $rawCandidateBaseUrl, $candidateBaseUrl);
+
             $defaultsPath = dirname(__DIR__, 2) . '/config/defaults.ini';
             $localPath = $this->resolveLocalConfigPath();
             $config = $this->configurationLoader->load(
@@ -164,6 +170,25 @@ final class CompareCommand extends Command
         $localPath = dirname(__DIR__, 2) . '/config/local.ini';
 
         return is_file($localPath) ? $localPath : null;
+    }
+
+    private function warnIfBaseUrlWasTrimmed(
+        OutputInterface $output,
+        string $label,
+        string $rawUrl,
+        string $normalizedBaseUrl
+    ): void {
+        if ($output->isQuiet() || !$this->urlNormalizer->hasNonOriginUrlParts($rawUrl)) {
+            return;
+        }
+
+        $discardedSuffix = $this->urlNormalizer->discardedUrlSuffix($rawUrl);
+        $output->writeln(sprintf(
+            'Warning: %s URL contains path/query/fragment "%s"; using base URL %s',
+            $label,
+            $discardedSuffix !== '' ? $discardedSuffix : '/',
+            $normalizedBaseUrl
+        ));
     }
 
     /**
