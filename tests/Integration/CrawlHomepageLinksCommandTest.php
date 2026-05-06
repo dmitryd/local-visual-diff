@@ -307,6 +307,44 @@ HTML,
         }
     }
 
+    public function testTransientServerErrorMismatchIsRetriedBeforeReporting(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local' => [
+                        'captures' => [
+                            ['title' => 'Temporary error', 'httpStatus' => 500, 'pageHeight' => 600],
+                            ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                        ],
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Retrying / after HTTP 200/500 ...', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(['matching'], array_column($report['results'], 'status'));
+            self::assertSame([200], array_column($report['results'], 'httpStatusCandidate'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testMaxPagesLimitsComparedPagesDuringStreamedCrawl(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
@@ -572,6 +610,11 @@ HTML,
 final class CrawlFixtureScreenshotService extends ScreenshotService
 {
     /**
+     * @var array<string, int>
+     */
+    private array $captureCounts = [];
+
+    /**
      * @param array<string, array<string, mixed>> $snapshots
      */
     public function __construct(private readonly array $snapshots)
@@ -602,7 +645,7 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
             $osFamily
         );
 
-        $spec = $this->snapshots[$url] ?? null;
+        $spec = $this->snapshotSpec($url);
 
         if (!is_array($spec)) {
             throw new RuntimeException(sprintf('No fixture screenshot configured for %s', $url));
@@ -622,6 +665,29 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
             is_array($spec['hrefs'] ?? null) ? array_values($spec['hrefs']) : [],
             (string) ($spec['baseHref'] ?? '')
         );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function snapshotSpec(string $url): ?array
+    {
+        $spec = $this->snapshots[$url] ?? null;
+
+        if (!is_array($spec)) {
+            return null;
+        }
+
+        if (!is_array($spec['captures'] ?? null)) {
+            return $spec;
+        }
+
+        $captureIndex = $this->captureCounts[$url] ?? 0;
+        $this->captureCounts[$url] = $captureIndex + 1;
+        $captures = array_values($spec['captures']);
+        $selected = $captures[min($captureIndex, count($captures) - 1)] ?? null;
+
+        return is_array($selected) ? $selected : null;
     }
 
     /**

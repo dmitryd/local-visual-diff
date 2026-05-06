@@ -27,6 +27,10 @@ use Throwable;
  */
 final class ComparisonRunner
 {
+    private const HTTP_CAPTURE_RETRY_ATTEMPTS = 1;
+
+    private const HTTP_CAPTURE_RETRY_DELAY_MICROSECONDS = 500000;
+
     public function __construct(
         private readonly ScreenshotService $screenshotService = new ScreenshotService(),
         private readonly ImageComparator $imageComparator = new ImageComparator(),
@@ -109,19 +113,13 @@ final class ComparisonRunner
         try {
             $snapshots = $profiler->measure(
                 'capture_pair',
-                fn () => $this->screenshotService->capturePair(
+                fn () => $this->capturePagePair(
+                    $configuration,
+                    $path,
                     $baselineUrl,
                     $baselineScreenshotPath,
                     $candidateUrl,
-                    $candidateScreenshotPath,
-                    $configuration->viewportWidth,
-                    $configuration->viewportHeight,
-                    $configuration->timeoutMs,
-                    $configuration->settleMs,
-                    $configuration->scrollWarmup,
-                    $configuration->acceptLanguage,
-                    $configuration->browserPath,
-                    PHP_OS_FAMILY
+                    $candidateScreenshotPath
                 )
             );
             $baselineSnapshot = $snapshots['baseline'];
@@ -275,6 +273,84 @@ final class ComparisonRunner
             $baselineSnapshot,
             $candidateSnapshot
         );
+    }
+
+    /**
+     * @return array{baseline:PageSnapshot, candidate:PageSnapshot}
+     */
+    private function capturePagePair(
+        RunConfiguration $configuration,
+        string $path,
+        string $baselineUrl,
+        string $baselineScreenshotPath,
+        string $candidateUrl,
+        string $candidateScreenshotPath
+    ): array {
+        $snapshots = $this->screenshotService->capturePair(
+            $baselineUrl,
+            $baselineScreenshotPath,
+            $candidateUrl,
+            $candidateScreenshotPath,
+            $configuration->viewportWidth,
+            $configuration->viewportHeight,
+            $configuration->timeoutMs,
+            $configuration->settleMs,
+            $configuration->scrollWarmup,
+            $configuration->acceptLanguage,
+            $configuration->browserPath,
+            PHP_OS_FAMILY
+        );
+
+        for ($attempt = 1; $attempt <= self::HTTP_CAPTURE_RETRY_ATTEMPTS; $attempt++) {
+            if (!$this->shouldRetryHttpStatusMismatch($snapshots['baseline'], $snapshots['candidate'])) {
+                break;
+            }
+
+            $this->logVerbose(
+                $configuration,
+                sprintf(
+                    'Retrying %s after HTTP %d/%d ...',
+                    $path,
+                    $snapshots['baseline']->httpStatus,
+                    $snapshots['candidate']->httpStatus
+                )
+            );
+            usleep(self::HTTP_CAPTURE_RETRY_DELAY_MICROSECONDS);
+
+            try {
+                $snapshots = $this->screenshotService->capturePair(
+                    $baselineUrl,
+                    $baselineScreenshotPath,
+                    $candidateUrl,
+                    $candidateScreenshotPath,
+                    $configuration->viewportWidth,
+                    $configuration->viewportHeight,
+                    $configuration->timeoutMs,
+                    $configuration->settleMs,
+                    $configuration->scrollWarmup,
+                    $configuration->acceptLanguage,
+                    $configuration->browserPath,
+                    PHP_OS_FAMILY
+                );
+            } catch (Throwable $throwable) {
+                $this->logVerbose(
+                    $configuration,
+                    sprintf('Retrying %s failed: %s', $path, $throwable->getMessage())
+                );
+                break;
+            }
+        }
+
+        return $snapshots;
+    }
+
+    private function shouldRetryHttpStatusMismatch(PageSnapshot $baselineSnapshot, PageSnapshot $candidateSnapshot): bool
+    {
+        if ($baselineSnapshot->httpStatus === $candidateSnapshot->httpStatus) {
+            return false;
+        }
+
+        return $baselineSnapshot->httpStatus >= 500 || $candidateSnapshot->httpStatus >= 500;
     }
 
     /**
