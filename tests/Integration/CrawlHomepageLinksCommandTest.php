@@ -10,11 +10,6 @@ use ImagickPixel;
 use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Command\CompareCommand;
-use LocalVisualDiff\Crawl\LinkExtractor;
-use LocalVisualDiff\Crawl\PageQueueFactory;
-use LocalVisualDiff\Crawl\RecursivePageCrawler;
-use LocalVisualDiff\Crawl\UrlMapper;
-use LocalVisualDiff\Crawl\UrlNormalizer;
 use LocalVisualDiff\Run\ComparisonRunner;
 use LocalVisualDiff\Support\Clock;
 use PHPUnit\Framework\TestCase;
@@ -174,7 +169,7 @@ HTML,
         }
     }
 
-    public function testBaselineHomepageHttpErrorStopsPageDiscovery(): void
+    public function testBaselineHomepageHttpErrorMismatchStopsPageDiscovery(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
         $this->removeDirectoryIfExists($outputDir);
@@ -222,6 +217,137 @@ HTML,
             self::assertStringContainsString('<span class="http-status">500/200</span>', $html);
             self::assertStringNotContainsString('About', $html);
             self::assertStringNotContainsString('Contact', $html);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testEqualHttpErrorStatusesStillCompareAndDiscoverLinks(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/login-help">Login help</a>
+  </body>
+</html>
+HTML,
+                    'http://legacy.local/login-help' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Forbidden', 'httpStatus' => 403, 'pageHeight' => 600],
+                    'http://upgraded.local' => ['title' => 'Forbidden', 'httpStatus' => 403, 'pageHeight' => 600],
+                    'http://legacy.local/login-help' => ['title' => 'Login help', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/login-help' => ['title' => 'Login help', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(['/', '/login-help'], array_column($report['results'], 'path'));
+            self::assertSame(['matching', 'matching'], array_column($report['results'], 'status'));
+            self::assertSame(['403', ''], array_column($report['results'], 'httpStatusLabel'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testHttpErrorMismatchDiscoversLinksWhenBaselineIsSuccessful(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/about">About</a>
+  </body>
+</html>
+HTML,
+                    'http://legacy.local/about' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local' => ['title' => 'Broken', 'httpStatus' => 500, 'pageHeight' => 600],
+                    'http://legacy.local/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(['/', '/about'], array_column($report['results'], 'path'));
+            self::assertSame(['http_error', 'matching'], array_column($report['results'], 'status'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testMaxPagesLimitsComparedPagesDuringStreamedCrawl(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/about">About</a>
+    <a href="/contact">Contact</a>
+  </body>
+</html>
+HTML,
+                    'http://legacy.local/about' => '<!doctype html><html><body><a href="/pricing">Pricing</a></body></html>',
+                    'http://legacy.local/contact' => '<!doctype html><html><body></body></html>',
+                    'http://legacy.local/pricing' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://legacy.local/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--max-pages' => 2,
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(2, $report['summary']['totalPages']);
+            self::assertSame(['/', '/about'], array_column($report['results'], 'path'));
         } finally {
             $this->removeDirectoryIfExists($outputDir);
         }
@@ -319,24 +445,16 @@ HTML,
     }
 
     /**
-     * @param array<string, string>              $htmlByUrl
+     * @param array<string, string|array{html:string, finalUrl?:string}> $htmlByUrl
      * @param array<string, array<string, mixed>> $snapshots
      */
     private function buildCommand(array $htmlByUrl, array $snapshots): CompareCommand
     {
-        $pageQueueFactory = new PageQueueFactory(
-            new RecursivePageCrawler(
-                new FixtureLinkExtractor($htmlByUrl),
-                new UrlMapper(),
-                new UrlNormalizer()
-            ),
-            new UrlNormalizer()
-        );
+        $snapshots = $this->withBaselineDomMetadata($htmlByUrl, $snapshots);
 
         return new CompareCommand(
             runner: new ComparisonRunner(
-                screenshotService: new CrawlFixtureScreenshotService($snapshots),
-                pageQueueFactory: $pageQueueFactory
+                screenshotService: new CrawlFixtureScreenshotService($snapshots)
             ),
             clock: new class () extends Clock {
                 public function timestampForRunDirectory(): string
@@ -350,6 +468,81 @@ HTML,
                 }
             }
         );
+    }
+
+    /**
+     * @param array<string, string|array{html:string, finalUrl?:string}> $htmlByUrl
+     * @param array<string, array<string, mixed>> $snapshots
+     * @return array<string, array<string, mixed>>
+     */
+    private function withBaselineDomMetadata(array $htmlByUrl, array $snapshots): array
+    {
+        foreach ($htmlByUrl as $url => $document) {
+            if (!isset($snapshots[$url])) {
+                continue;
+            }
+
+            $html = is_array($document) ? $document['html'] : $document;
+            $snapshots[$url]['hrefs'] = $this->extractHrefsFromHtml($html);
+            $snapshots[$url]['baseHref'] = $this->extractBaseHrefFromHtml($html);
+
+            if (is_array($document) && isset($document['finalUrl']) && !isset($snapshots[$url]['finalUrl'])) {
+                $snapshots[$url]['finalUrl'] = $document['finalUrl'];
+            }
+        }
+
+        return $snapshots;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractHrefsFromHtml(string $html): array
+    {
+        $xpath = $this->createXPath($html);
+        $nodes = $xpath->query('//a[@href]');
+
+        if ($nodes === false) {
+            return [];
+        }
+
+        $hrefs = [];
+
+        foreach ($nodes as $node) {
+            $href = trim((string) $node->attributes?->getNamedItem('href')?->nodeValue);
+
+            if ($href === '') {
+                continue;
+            }
+
+            $hrefs[] = $href;
+        }
+
+        return $hrefs;
+    }
+
+    private function extractBaseHrefFromHtml(string $html): string
+    {
+        $xpath = $this->createXPath($html);
+        $nodes = $xpath->query('(//base[@href])[1]');
+
+        if ($nodes === false || $nodes->length === 0) {
+            return '';
+        }
+
+        return trim((string) $nodes->item(0)?->attributes?->getNamedItem('href')?->nodeValue);
+    }
+
+    private function createXPath(string $html): \DOMXPath
+    {
+        $document = new \DOMDocument();
+
+        $previous = libxml_use_internal_errors(true);
+        $document->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        return new \DOMXPath($document);
     }
 
     private function removeDirectoryIfExists(string $path): void
@@ -373,39 +566,6 @@ HTML,
         }
 
         rmdir($path);
-    }
-}
-
-final class FixtureLinkExtractor extends LinkExtractor
-{
-    /**
-     * @param array<string, string|array{html:string, finalUrl?:string}> $documentsByUrl
-     */
-    public function __construct(private readonly array $documentsByUrl)
-    {
-    }
-
-    protected function fetchDocument(string $pageUrl, bool $verifyTls = true): array
-    {
-        unset($verifyTls);
-
-        if (!array_key_exists($pageUrl, $this->documentsByUrl)) {
-            throw new RuntimeException(sprintf('No fixture HTML configured for %s', $pageUrl));
-        }
-
-        $document = $this->documentsByUrl[$pageUrl];
-
-        if (is_array($document)) {
-            return [
-                'html' => $document['html'],
-                'finalUrl' => $document['finalUrl'] ?? $pageUrl,
-            ];
-        }
-
-        return [
-            'html' => $document,
-            'finalUrl' => $pageUrl,
-        ];
     }
 }
 
@@ -458,7 +618,9 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
             $imagePath,
             (int) ($spec['pageHeight'] ?? 600),
             (string) ($spec['navigatorLanguage'] ?? ''),
-            is_array($spec['navigatorLanguages'] ?? null) ? array_values($spec['navigatorLanguages']) : []
+            is_array($spec['navigatorLanguages'] ?? null) ? array_values($spec['navigatorLanguages']) : [],
+            is_array($spec['hrefs'] ?? null) ? array_values($spec['hrefs']) : [],
+            (string) ($spec['baseHref'] ?? '')
         );
     }
 

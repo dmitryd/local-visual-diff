@@ -9,6 +9,10 @@ namespace LocalVisualDiff\Browser;
  */
 final class PageSnapshot
 {
+    /**
+     * @param array<int, string> $navigatorLanguages
+     * @param array<int, string> $hrefs
+     */
     public function __construct(
         public readonly string $pageUrl,
         public readonly string $finalUrl,
@@ -17,7 +21,9 @@ final class PageSnapshot
         public readonly string $imagePath,
         public readonly int $pageHeight,
         public readonly string $navigatorLanguage = '',
-        public readonly array $navigatorLanguages = []
+        public readonly array $navigatorLanguages = [],
+        public readonly array $hrefs = [],
+        public readonly string $baseHref = ''
     ) {
     }
 }

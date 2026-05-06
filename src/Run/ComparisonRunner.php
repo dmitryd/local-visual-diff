@@ -6,7 +6,7 @@ namespace LocalVisualDiff\Run;
 
 use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Browser\ScreenshotService;
-use LocalVisualDiff\Crawl\PageQueueFactory;
+use LocalVisualDiff\Crawl\UrlMapper;
 use LocalVisualDiff\Compare\ImageComparator;
 use LocalVisualDiff\Config\RunConfiguration;
 use LocalVisualDiff\Report\ReportRenderer;
@@ -16,7 +16,6 @@ use LocalVisualDiff\Support\Clock;
 use LocalVisualDiff\Support\Filesystem;
 use LocalVisualDiff\Support\RunProfiler;
 use LocalVisualDiff\Support\Slugger;
-use RuntimeException;
 use Throwable;
 
 /**
@@ -31,7 +30,7 @@ final class ComparisonRunner
     public function __construct(
         private readonly ScreenshotService $screenshotService = new ScreenshotService(),
         private readonly ImageComparator $imageComparator = new ImageComparator(),
-        private readonly PageQueueFactory $pageQueueFactory = new PageQueueFactory(),
+        private readonly UrlMapper $urlMapper = new UrlMapper(),
         private readonly ReportViewModelFactory $reportViewModelFactory = new ReportViewModelFactory(),
         private readonly ReportRenderer $reportRenderer = new ReportRenderer(),
         private readonly Filesystem $filesystem = new Filesystem(),
@@ -48,31 +47,24 @@ final class ComparisonRunner
 
         $generatedAt = $this->clock->formattedNow();
         $pageResults = [];
-        $homepageResult = $this->comparePage($configuration, $outputDir, '/', $profiler);
-        $this->logPageResult($configuration, $homepageResult);
-        $pageResults[] = $homepageResult;
+        $queue = ['/'];
+        $seen = ['/' => true];
 
-        if ($this->shouldCrawlAdditionalPages($configuration, $homepageResult)) {
-            $paths = $profiler->measure(
-                'queue_build',
-                fn (): array => $this->pageQueueFactory->build(
-                    $configuration->baselineBaseUrl,
-                    true,
-                    $configuration->ignoredQueryParamNamePattern,
-                    $configuration->crawlFetchVerifyTls,
-                    $configuration->maxPages
-                )
-            );
-
-            foreach ($paths as $path) {
-                if ($path === '/') {
-                    continue;
-                }
-
-                $pageResult = $this->comparePage($configuration, $outputDir, $path, $profiler);
-                $this->logPageResult($configuration, $pageResult);
-                $pageResults[] = $pageResult;
+        for ($index = 0; $index < count($queue); $index++) {
+            if ($configuration->maxPages > 0 && count($pageResults) >= $configuration->maxPages) {
+                break;
             }
+
+            $pageComparison = $this->comparePage($configuration, $outputDir, $queue[$index], $profiler);
+            $pageResult = $pageComparison['result'];
+            $this->logPageResult($configuration, $pageResult);
+            $pageResults[] = $pageResult;
+
+            if (!$this->shouldDiscoverLinks($configuration, $pageComparison)) {
+                continue;
+            }
+
+            $this->appendDiscoveredTargets($configuration, $queue, $seen, $pageComparison['baselineSnapshot']);
         }
 
         $reportPath = $this->filesystem->joinPath($outputDir, 'report.html');
@@ -95,23 +87,13 @@ final class ComparisonRunner
     }
 
     /**
-     * Decide whether the run should expand from the homepage result into the
-     * crawl queue.
+     * @return array{
+     *   result:PageResult,
+     *   baselineSnapshot:?PageSnapshot,
+     *   candidateSnapshot:?PageSnapshot
+     * }
      */
-    private function shouldCrawlAdditionalPages(RunConfiguration $configuration, PageResult $homepageResult): bool
-    {
-        if (!$configuration->crawlHomepageLinks) {
-            return false;
-        }
-
-        if ($configuration->maxPages === 1) {
-            return false;
-        }
-
-        return !in_array($homepageResult->status, ['http_error', 'runtime_error'], true);
-    }
-
-    private function comparePage(RunConfiguration $configuration, string $outputDir, string $path, RunProfiler $profiler): PageResult
+    private function comparePage(RunConfiguration $configuration, string $outputDir, string $path, RunProfiler $profiler): array
     {
         $pageSlug = $this->slugger->slugPath($path);
         $pageDir = $this->filesystem->joinPath($outputDir, 'pages', $pageSlug);
@@ -149,15 +131,17 @@ final class ComparisonRunner
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
             $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
-            return new PageResult(
-                $path,
-                $this->fallbackTitle($path, $baselineUrl, $candidateUrl),
-                'runtime_error',
-                $baselineUrl,
-                $candidateUrl,
-                0,
-                0,
-                []
+            return $this->pageComparison(
+                new PageResult(
+                    $path,
+                    $this->fallbackTitle($path, $baselineUrl, $candidateUrl),
+                    'runtime_error',
+                    $baselineUrl,
+                    $candidateUrl,
+                    0,
+                    0,
+                    []
+                )
             );
         }
 
@@ -171,15 +155,19 @@ final class ComparisonRunner
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
             $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
-            return new PageResult(
-                $path,
-                $title,
-                'http_error',
-                $baselineUrl,
-                $candidateUrl,
-                $baselineSnapshot->httpStatus,
-                $candidateSnapshot->httpStatus,
-                []
+            return $this->pageComparison(
+                new PageResult(
+                    $path,
+                    $title,
+                    'http_error',
+                    $baselineUrl,
+                    $candidateUrl,
+                    $baselineSnapshot->httpStatus,
+                    $candidateSnapshot->httpStatus,
+                    []
+                ),
+                $baselineSnapshot,
+                $candidateSnapshot
             );
         }
 
@@ -203,15 +191,19 @@ final class ComparisonRunner
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
             $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
-            return new PageResult(
-                $path,
-                $title,
-                'runtime_error',
-                $baselineUrl,
-                $candidateUrl,
-                $baselineSnapshot->httpStatus,
-                $candidateSnapshot->httpStatus,
-                []
+            return $this->pageComparison(
+                new PageResult(
+                    $path,
+                    $title,
+                    'runtime_error',
+                    $baselineUrl,
+                    $candidateUrl,
+                    $baselineSnapshot->httpStatus,
+                    $candidateSnapshot->httpStatus,
+                    []
+                ),
+                $baselineSnapshot,
+                $candidateSnapshot
             );
         }
 
@@ -221,15 +213,19 @@ final class ComparisonRunner
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
 
-            return new PageResult(
-                $path,
-                $title,
-                'different',
-                $baselineUrl,
-                $candidateUrl,
-                $baselineSnapshot->httpStatus,
-                $candidateSnapshot->httpStatus,
-                $artifacts
+            return $this->pageComparison(
+                new PageResult(
+                    $path,
+                    $title,
+                    'different',
+                    $baselineUrl,
+                    $candidateUrl,
+                    $baselineSnapshot->httpStatus,
+                    $candidateSnapshot->httpStatus,
+                    $artifacts
+                ),
+                $baselineSnapshot,
+                $candidateSnapshot
             );
         }
 
@@ -238,15 +234,19 @@ final class ComparisonRunner
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
             $this->filesystem->removeDirectoryIfEmpty($pageDir);
 
-            return new PageResult(
-                $path,
-                $title,
-                'matching',
-                $baselineUrl,
-                $candidateUrl,
-                $baselineSnapshot->httpStatus,
-                $candidateSnapshot->httpStatus,
-                []
+            return $this->pageComparison(
+                new PageResult(
+                    $path,
+                    $title,
+                    'matching',
+                    $baselineUrl,
+                    $candidateUrl,
+                    $baselineSnapshot->httpStatus,
+                    $candidateSnapshot->httpStatus,
+                    []
+                ),
+                $baselineSnapshot,
+                $candidateSnapshot
             );
         }
 
@@ -258,19 +258,102 @@ final class ComparisonRunner
         $this->filesystem->removeFileIfExists($baselineScreenshotPath);
         $this->filesystem->removeFileIfExists($candidateScreenshotPath);
 
-        return new PageResult(
-            $path,
-            $title,
-            'matching',
-            $baselineUrl,
-            $candidateUrl,
-            $baselineSnapshot->httpStatus,
-            $candidateSnapshot->httpStatus,
-            [
-                'baseline' => $this->filesystem->relativePath($outputDir, $baselineArtifactPath),
-                'candidate' => $this->filesystem->relativePath($outputDir, $candidateArtifactPath),
-            ]
+        return $this->pageComparison(
+            new PageResult(
+                $path,
+                $title,
+                'matching',
+                $baselineUrl,
+                $candidateUrl,
+                $baselineSnapshot->httpStatus,
+                $candidateSnapshot->httpStatus,
+                [
+                    'baseline' => $this->filesystem->relativePath($outputDir, $baselineArtifactPath),
+                    'candidate' => $this->filesystem->relativePath($outputDir, $candidateArtifactPath),
+                ]
+            ),
+            $baselineSnapshot,
+            $candidateSnapshot
         );
+    }
+
+    /**
+     * @return array{
+     *   result:PageResult,
+     *   baselineSnapshot:?PageSnapshot,
+     *   candidateSnapshot:?PageSnapshot
+     * }
+     */
+    private function pageComparison(
+        PageResult $pageResult,
+        ?PageSnapshot $baselineSnapshot = null,
+        ?PageSnapshot $candidateSnapshot = null
+    ): array {
+        return [
+            'result' => $pageResult,
+            'baselineSnapshot' => $baselineSnapshot,
+            'candidateSnapshot' => $candidateSnapshot,
+        ];
+    }
+
+    /**
+     * @param array{
+     *   result:PageResult,
+     *   baselineSnapshot:?PageSnapshot,
+     *   candidateSnapshot:?PageSnapshot
+     * } $pageComparison
+     */
+    private function shouldDiscoverLinks(RunConfiguration $configuration, array $pageComparison): bool
+    {
+        if (!$configuration->crawlHomepageLinks) {
+            return false;
+        }
+
+        $baselineSnapshot = $pageComparison['baselineSnapshot'];
+        $candidateSnapshot = $pageComparison['candidateSnapshot'];
+
+        if (!$baselineSnapshot instanceof PageSnapshot || !$candidateSnapshot instanceof PageSnapshot) {
+            return false;
+        }
+
+        if ($baselineSnapshot->httpStatus === $candidateSnapshot->httpStatus) {
+            return true;
+        }
+
+        return $baselineSnapshot->httpStatus < 400;
+    }
+
+    /**
+     * @param array<int, string>       $queue
+     * @param array<string, bool>      $seen
+     */
+    private function appendDiscoveredTargets(
+        RunConfiguration $configuration,
+        array &$queue,
+        array &$seen,
+        PageSnapshot $baselineSnapshot
+    ): void {
+        $documentBaseUrl = $this->urlMapper->effectiveDocumentBaseUrl(
+            $baselineSnapshot->pageUrl,
+            $baselineSnapshot->finalUrl,
+            $baselineSnapshot->baseHref
+        );
+
+        foreach ($baselineSnapshot->hrefs as $href) {
+            $target = $this->urlMapper->toTarget(
+                $configuration->baselineBaseUrl,
+                $documentBaseUrl,
+                $href,
+                $configuration->ignoredQueryParamNamePattern
+            );
+
+            if ($target === null || isset($seen[$target])) {
+                continue;
+            }
+
+            $seen[$target] = true;
+            $queue[] = $target;
+        }
     }
 
     protected function hasHttpErrorMismatch(PageSnapshot $baselineSnapshot, PageSnapshot $candidateSnapshot): bool

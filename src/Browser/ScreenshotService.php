@@ -87,7 +87,9 @@ class ScreenshotService
                 $imagePath,
                 $pageMetadata['pageHeight'],
                 $pageMetadata['navigatorLanguage'],
-                $pageMetadata['navigatorLanguages']
+                $pageMetadata['navigatorLanguages'],
+                $pageMetadata['hrefs'],
+                $pageMetadata['baseHref']
             );
         } catch (Throwable $throwable) {
             throw new RuntimeException(
@@ -170,7 +172,9 @@ class ScreenshotService
                     $baselineImagePath,
                     $baselineMetadata['pageHeight'],
                     $baselineMetadata['navigatorLanguage'],
-                    $baselineMetadata['navigatorLanguages']
+                    $baselineMetadata['navigatorLanguages'],
+                    $baselineMetadata['hrefs'],
+                    $baselineMetadata['baseHref']
                 ),
                 'candidate' => new PageSnapshot(
                     $candidateUrl,
@@ -180,7 +184,9 @@ class ScreenshotService
                     $candidateImagePath,
                     $candidateMetadata['pageHeight'],
                     $candidateMetadata['navigatorLanguage'],
-                    $candidateMetadata['navigatorLanguages']
+                    $candidateMetadata['navigatorLanguages'],
+                    $candidateMetadata['hrefs'],
+                    $candidateMetadata['baseHref']
                 ),
             ];
         } catch (Throwable $throwable) {
@@ -609,7 +615,9 @@ JS;
      *   httpStatus:int,
      *   pageHeight:int,
      *   navigatorLanguage:string,
-     *   navigatorLanguages:array<int,string>
+     *   navigatorLanguages:array<int,string>,
+     *   hrefs:array<int,string>,
+     *   baseHref:string
      * }
      *
      * @throws CommunicationException
@@ -624,6 +632,7 @@ JS;
     const entry = entries.length > 0 ? entries[entries.length - 1] : null;
     const bodyHeight = document.body ? document.body.scrollHeight : 0;
     const documentHeight = document.documentElement ? document.documentElement.scrollHeight : 0;
+    const baseElement = document.querySelector('base[href]');
 
     return {
         finalUrl: window.location.href || '',
@@ -632,6 +641,11 @@ JS;
         pageHeight: Math.max(bodyHeight, documentHeight),
         navigatorLanguage: navigator.language || '',
         navigatorLanguages: Array.isArray(navigator.languages) ? navigator.languages : [],
+        hrefs: Array
+            .from(document.querySelectorAll('a[href]'))
+            .map((anchor) => anchor.getAttribute('href') || '')
+            .filter((href) => href.trim() !== ''),
+        baseHref: baseElement ? (baseElement.getAttribute('href') || '') : '',
     };
 })()
 JS);
@@ -646,6 +660,8 @@ JS);
                 'pageHeight' => 0,
                 'navigatorLanguage' => '',
                 'navigatorLanguages' => [],
+                'hrefs' => [],
+                'baseHref' => '',
             ];
         }
 
@@ -659,6 +675,14 @@ JS);
                 static fn (mixed $value): string => (string) $value,
                 is_array($metadata['navigatorLanguages'] ?? null) ? $metadata['navigatorLanguages'] : []
             )),
+            'hrefs' => array_values(array_filter(
+                array_map(
+                    static fn (mixed $value): string => trim((string) $value),
+                    is_array($metadata['hrefs'] ?? null) ? $metadata['hrefs'] : []
+                ),
+                static fn (string $value): bool => $value !== ''
+            )),
+            'baseHref' => trim((string) ($metadata['baseHref'] ?? '')),
         ];
     }
 
