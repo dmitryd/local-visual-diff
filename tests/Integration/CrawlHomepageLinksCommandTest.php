@@ -207,16 +207,19 @@ HTML,
             ]);
 
             self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... HTTP error 500/200', $tester->getDisplay());
 
             $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
             self::assertSame(1, $report['summary']['totalPages']);
             self::assertSame(1, $report['summary']['httpErrorPages']);
             self::assertSame(['http_error'], array_column($report['results'], 'status'));
             self::assertSame(['HTTP error 500'], array_column($report['results'], 'statusLabel'));
+            self::assertSame(['500/200'], array_column($report['results'], 'httpStatusLabel'));
 
             $html = file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.html');
             self::assertIsString($html);
             self::assertStringContainsString('HTTP error 500', $html);
+            self::assertStringContainsString('<span class="http-status">500/200</span>', $html);
             self::assertStringNotContainsString('About', $html);
             self::assertStringNotContainsString('Contact', $html);
         } finally {

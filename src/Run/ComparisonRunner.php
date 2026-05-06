@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LocalVisualDiff\Run;
 
+use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Crawl\PageQueueFactory;
 use LocalVisualDiff\Compare\ImageComparator;
@@ -165,7 +166,7 @@ final class ComparisonRunner
         $this->logSnapshotDiagnostics($configuration, 'Baseline', $baselineSnapshot);
         $this->logSnapshotDiagnostics($configuration, 'Candidate', $candidateSnapshot);
 
-        if ($baselineSnapshot->httpStatus >= 400 || $candidateSnapshot->httpStatus >= 400) {
+        if ($this->hasHttpErrorMismatch($baselineSnapshot, $candidateSnapshot)) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
             $this->filesystem->removeDirectoryIfEmpty($pageDir);
@@ -270,6 +271,23 @@ final class ComparisonRunner
                 'candidate' => $this->filesystem->relativePath($outputDir, $candidateArtifactPath),
             ]
         );
+    }
+
+    protected function hasHttpErrorMismatch(PageSnapshot $baselineSnapshot, PageSnapshot $candidateSnapshot): bool
+    {
+        $baselineHasHttpError = $this->isHttpErrorStatus($baselineSnapshot->httpStatus);
+        $candidateHasHttpError = $this->isHttpErrorStatus($candidateSnapshot->httpStatus);
+
+        if (!$baselineHasHttpError && !$candidateHasHttpError) {
+            return false;
+        }
+
+        return $baselineSnapshot->httpStatus !== $candidateSnapshot->httpStatus;
+    }
+
+    protected function isHttpErrorStatus(int $httpStatus): bool
+    {
+        return $httpStatus >= 400;
     }
 
     /**
@@ -389,7 +407,7 @@ final class ComparisonRunner
         $this->emitConsoleLine($configuration, $message);
     }
 
-    private function logSnapshotDiagnostics(RunConfiguration $configuration, string $label, \LocalVisualDiff\Browser\PageSnapshot $snapshot): void
+    private function logSnapshotDiagnostics(RunConfiguration $configuration, string $label, PageSnapshot $snapshot): void
     {
         if (!$configuration->veryVerbose) {
             return;
@@ -427,26 +445,47 @@ final class ComparisonRunner
 
     private function statusLabel(PageResult $pageResult): string
     {
-        return match ($pageResult->status) {
+        $statusLabel = match ($pageResult->status) {
             'matching' => 'matching',
             'different' => 'different',
             'http_error' => $this->httpErrorLabel($pageResult),
             'runtime_error' => 'runtime error',
             default => $pageResult->status,
         };
+
+        if (in_array($pageResult->status, ['matching', 'different'], true)) {
+            $httpStatusLabel = $this->httpStatusLabel($pageResult);
+
+            if ($httpStatusLabel !== '') {
+                $statusLabel .= sprintf(' (HTTP %s)', $httpStatusLabel);
+            }
+        }
+
+        return $statusLabel;
     }
 
     private function httpErrorLabel(PageResult $pageResult): string
     {
-        if ($pageResult->httpStatusBaseline >= 400) {
-            return sprintf('HTTP error %d', $pageResult->httpStatusBaseline);
-        }
+        $httpStatusLabel = $this->httpStatusLabel($pageResult);
 
-        if ($pageResult->httpStatusCandidate >= 400) {
-            return sprintf('HTTP error %d', $pageResult->httpStatusCandidate);
+        if ($httpStatusLabel !== '') {
+            return sprintf('HTTP error %s', $httpStatusLabel);
         }
 
         return 'HTTP error';
+    }
+
+    protected function httpStatusLabel(PageResult $pageResult): string
+    {
+        if ($pageResult->httpStatusBaseline < 400 && $pageResult->httpStatusCandidate < 400) {
+            return '';
+        }
+
+        if ($pageResult->httpStatusBaseline === $pageResult->httpStatusCandidate) {
+            return (string) $pageResult->httpStatusBaseline;
+        }
+
+        return sprintf('%d/%d', $pageResult->httpStatusBaseline, $pageResult->httpStatusCandidate);
     }
 
     private function colorizedStatusLabel(PageResult $pageResult, string $statusLabel): string

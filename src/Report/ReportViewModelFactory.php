@@ -90,6 +90,7 @@ final class ReportViewModelFactory
         $httpStatusBaseline = $this->extractHttpStatus($result, 'baseline');
         $httpStatusCandidate = $this->extractHttpStatus($result, 'candidate');
         $statusLabel = $this->statusLabel($status, $httpStatusBaseline, $httpStatusCandidate);
+        $httpStatusLabel = $this->httpStatusLabel($httpStatusBaseline, $httpStatusCandidate);
         $artifacts = is_array($result['artifacts'] ?? null) ? $result['artifacts'] : [];
         $title = trim((string) ($result['title'] ?? ''));
 
@@ -116,6 +117,7 @@ final class ReportViewModelFactory
             'overlayUrl' => $this->artifactUrl($artifacts['overlay'] ?? null),
             'httpStatusBaseline' => $httpStatusBaseline,
             'httpStatusCandidate' => $httpStatusCandidate,
+            'httpStatusLabel' => $httpStatusLabel,
         ];
     }
 
@@ -156,6 +158,19 @@ final class ReportViewModelFactory
         }
 
         return 'HTTP error';
+    }
+
+    protected function httpStatusLabel(int $httpStatusBaseline, int $httpStatusCandidate): string
+    {
+        if ($httpStatusBaseline < 400 && $httpStatusCandidate < 400) {
+            return '';
+        }
+
+        if ($httpStatusBaseline === $httpStatusCandidate) {
+            return (string) $httpStatusBaseline;
+        }
+
+        return sprintf('%d/%d', $httpStatusBaseline, $httpStatusCandidate);
     }
 
     /**

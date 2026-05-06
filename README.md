@@ -29,6 +29,12 @@ The report lists each page as one of:
 - `HTTP error ...`
 - `Runtime error`
 
+If baseline and candidate return the same HTTP error status, such as `403` or
+`404`, the page is still visually compared and can be reported as `Matching` or
+`Different`. The report's `HTTP` column shows non-2xx/non-3xx response codes,
+using a single code for matching statuses and `baseline/candidate` for
+mismatched statuses, such as `500/200`.
+
 When pages differ, the report can link to:
 
 - baseline screenshot
@@ -317,7 +323,7 @@ php bin/visual-diff \
 
 - Browser rendering can differ if installed fonts differ between environments.
 - Background videos and motion are disabled during capture to reduce false positives.
-- If the baseline homepage fails with an HTTP error, the tool reports that failure and does not continue discovery from that page.
+- If the baseline and candidate homepage fail with different HTTP statuses, the tool reports that failure and does not continue discovery from that page.
 - Matching pages do not keep screenshots by default, which helps reduce disk usage.
 
 ## Attribution

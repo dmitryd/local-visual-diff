@@ -10,6 +10,11 @@
     <td>
         <span class="status-text">{result.statusLabel}</span>
     </td>
+    <td>
+        <f:if condition="{result.httpStatusLabel}">
+            <span class="http-status">{result.httpStatusLabel}</span>
+        </f:if>
+    </td>
     <td class="page-cell">
         <p class="page-title">{result.title}</p>
         <p class="page-path">{result.path}</p>

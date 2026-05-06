@@ -72,11 +72,13 @@ final class ReportRendererTest extends TestCase
         self::assertStringContainsString('Local Visual Diff Report', $html);
         self::assertStringContainsString('Baseline', $html);
         self::assertStringContainsString('Candidate', $html);
+        self::assertStringContainsString('<th>HTTP</th>', $html);
         self::assertStringContainsString('Matching screenshots', $html);
         self::assertStringContainsString('enabled', $html);
         self::assertStringContainsString('matching', $html);
         self::assertStringContainsString('different', $html);
         self::assertStringContainsString('HTTP error 500', $html);
+        self::assertStringContainsString('<span class="http-status">500/200</span>', $html);
         self::assertStringContainsString('Home', $html);
         self::assertStringContainsString('Pricing', $html);
         self::assertStringContainsString('/admin', $html);

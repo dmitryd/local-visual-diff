@@ -248,6 +248,144 @@ final class CompareHomepageCommandTest extends TestCase
         }
     }
 
+    public function testSameHttpErrorStatusStillComparesMatchingHomepageScreenshots(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Login required',
+                        'httpStatus' => 403,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Login required',
+                        'httpStatus' => 403,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... matching (HTTP 403)', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['matchingPages']);
+            self::assertSame(0, $report['summary']['httpErrorPages']);
+            self::assertSame('matching', $report['results'][0]['status']);
+            self::assertSame('403', $report['results'][0]['httpStatusLabel']);
+
+            $html = file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.html');
+            self::assertIsString($html);
+            self::assertStringContainsString('<th>HTTP</th>', $html);
+            self::assertStringContainsString('<span class="http-status">403</span>', $html);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testSameHttpErrorStatusStillComparesDifferentHomepageScreenshots(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Login required',
+                        'httpStatus' => 403,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Login required',
+                        'httpStatus' => 403,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'red'],
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... different (HTTP 403)', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['differentPages']);
+            self::assertSame(0, $report['summary']['httpErrorPages']);
+            self::assertSame('different', $report['results'][0]['status']);
+            self::assertSame('403', $report['results'][0]['httpStatusLabel']);
+            self::assertNotEmpty($report['results'][0]['diffUrl']);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testDifferentHttpErrorStatusesAreReportedAsHttpError(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Login required',
+                        'httpStatus' => 403,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Not found',
+                        'httpStatus' => 404,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                        'rectangle' => [24, 24, 228, 160, 'black'],
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing / ... HTTP error 403/404', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['httpErrorPages']);
+            self::assertSame('http_error', $report['results'][0]['status']);
+            self::assertSame('403/404', $report['results'][0]['httpStatusLabel']);
+            self::assertNull($report['results'][0]['diffUrl']);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testQuietOutputSuppressesProgressAndReportPath(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';

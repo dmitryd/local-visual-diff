@@ -136,6 +136,12 @@
             white-space: nowrap;
         }
 
+        .http-status {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .page-cell .page-title {
             margin: 0;
             font-size: 0.98rem;
@@ -228,6 +234,7 @@
                 <tr>
                     <th class="status-col">Status</th>
                     <th>Result</th>
+                    <th>HTTP</th>
                     <th>Page title</th>
                     <th>Baseline</th>
                     <th>Candidate</th>
@@ -246,7 +253,7 @@
                     </f:then>
                     <f:else>
                         <tr>
-                            <td colspan="9" class="empty-cell">No pages were processed.</td>
+                            <td colspan="10" class="empty-cell">No pages were processed.</td>
                         </tr>
                     </f:else>
                 </f:if>
