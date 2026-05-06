@@ -387,6 +387,7 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
     {
     }
 
+    #[\Override]
     public function capture(
         string $url,
         string $imagePath,
@@ -394,11 +395,21 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
         int $viewportHeight,
         int $timeoutMs,
         int $settleMs,
+        bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
         ?string $osFamily = null
     ): PageSnapshot {
-        unset($viewportWidth, $viewportHeight, $timeoutMs, $settleMs, $acceptLanguage, $configuredBrowserPath, $osFamily);
+        unset(
+            $viewportWidth,
+            $viewportHeight,
+            $timeoutMs,
+            $settleMs,
+            $scrollWarmup,
+            $acceptLanguage,
+            $configuredBrowserPath,
+            $osFamily
+        );
 
         $spec = $this->snapshots[$url] ?? null;
 
@@ -418,6 +429,52 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
             (string) ($spec['navigatorLanguage'] ?? ''),
             is_array($spec['navigatorLanguages'] ?? null) ? array_values($spec['navigatorLanguages']) : []
         );
+    }
+
+    /**
+     * @return array{baseline:PageSnapshot, candidate:PageSnapshot}
+     */
+    #[\Override]
+    public function capturePair(
+        string $baselineUrl,
+        string $baselineImagePath,
+        string $candidateUrl,
+        string $candidateImagePath,
+        int $viewportWidth,
+        int $viewportHeight,
+        int $timeoutMs,
+        int $settleMs,
+        bool $scrollWarmup = false,
+        string $acceptLanguage = 'de, en',
+        ?string $configuredBrowserPath = null,
+        ?string $osFamily = null
+    ): array {
+        return [
+            'baseline' => $this->capture(
+                $baselineUrl,
+                $baselineImagePath,
+                $viewportWidth,
+                $viewportHeight,
+                $timeoutMs,
+                $settleMs,
+                $scrollWarmup,
+                $acceptLanguage,
+                $configuredBrowserPath,
+                $osFamily
+            ),
+            'candidate' => $this->capture(
+                $candidateUrl,
+                $candidateImagePath,
+                $viewportWidth,
+                $viewportHeight,
+                $timeoutMs,
+                $settleMs,
+                $scrollWarmup,
+                $acceptLanguage,
+                $configuredBrowserPath,
+                $osFamily
+            ),
+        ];
     }
 
     /**

@@ -101,6 +101,7 @@ final class IniConfigurationLoader
                 case 'viewport_height':
                 case 'settle_ms':
                 case 'timeout_ms':
+                case 'scroll_warmup':
                 case 'max_fullpage_height':
                 case 'context_padding':
                     $nested['browser'][$key] = $value;

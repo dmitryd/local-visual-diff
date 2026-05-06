@@ -124,34 +124,25 @@ final class ComparisonRunner
         $candidateScreenshotPath = $this->filesystem->joinPath($pageDir, 'candidate.capture.png');
 
         try {
-            $baselineSnapshot = $profiler->measure(
-                'capture_baseline',
-                fn () => $this->screenshotService->capture(
+            $snapshots = $profiler->measure(
+                'capture_pair',
+                fn () => $this->screenshotService->capturePair(
                     $baselineUrl,
                     $baselineScreenshotPath,
-                    $configuration->viewportWidth,
-                    $configuration->viewportHeight,
-                    $configuration->timeoutMs,
-                    $configuration->settleMs,
-                    $configuration->acceptLanguage,
-                    $configuration->browserPath,
-                    PHP_OS_FAMILY
-                )
-            );
-            $candidateSnapshot = $profiler->measure(
-                'capture_candidate',
-                fn () => $this->screenshotService->capture(
                     $candidateUrl,
                     $candidateScreenshotPath,
                     $configuration->viewportWidth,
                     $configuration->viewportHeight,
                     $configuration->timeoutMs,
                     $configuration->settleMs,
+                    $configuration->scrollWarmup,
                     $configuration->acceptLanguage,
                     $configuration->browserPath,
                     PHP_OS_FAMILY
                 )
             );
+            $baselineSnapshot = $snapshots['baseline'];
+            $candidateSnapshot = $snapshots['candidate'];
         } catch (Throwable $throwable) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);

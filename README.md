@@ -149,6 +149,7 @@ Example:
 [browser]
 path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
 accept_language = "de, en"
+scroll_warmup = false
 
 [crawl]
 fetch_verify_tls = false
@@ -173,6 +174,8 @@ artifact_image_format = "webp"
   Extra wait time after navigation before screenshot capture.
 - `timeout_ms`
   Timeout for browser operations.
+- `scroll_warmup`
+  Whether the browser should scroll through the page before capture. Default: `false`. Enable this only for sites that need scroll-driven lazy content, because scrolling can trigger sticky menus or other JavaScript state that would not be visible in the initial browser view.
 - `max_fullpage_height`
   Height threshold for large-page fallback behavior.
 - `context_padding`
@@ -229,6 +232,7 @@ Important options:
 - `--viewport-height`
 - `--settle-ms`
 - `--timeout-ms`
+- `--scroll-warmup`
 - `--max-fullpage-height`
 - `--context-padding`
 - `--shift-tolerance`

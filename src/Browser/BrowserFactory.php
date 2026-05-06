@@ -16,8 +16,7 @@ use HeadlessChromium\BrowserFactory as ChromeBrowserFactory;
 final class BrowserFactory
 {
     public function __construct(
-        private readonly BrowserLocator $browserLocator = new BrowserLocator(),
-        private readonly PageStabilizer $pageStabilizer = new PageStabilizer()
+        private readonly BrowserLocator $browserLocator = new BrowserLocator()
     ) {
     }
 
@@ -36,8 +35,6 @@ final class BrowserFactory
             'keepAlive' => false,
             'disableNotifications' => true,
         ], $options));
-
-        $browser->setPagePreScript($this->pageStabilizer->browserPreScript());
 
         return $browser;
     }

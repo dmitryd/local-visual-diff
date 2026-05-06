@@ -53,6 +53,7 @@ final class CompareCommand extends Command
             ->addOption('viewport-height', null, InputOption::VALUE_REQUIRED, 'Viewport height in pixels.')
             ->addOption('settle-ms', null, InputOption::VALUE_REQUIRED, 'Milliseconds to wait after navigation.')
             ->addOption('timeout-ms', null, InputOption::VALUE_REQUIRED, 'Milliseconds to wait for browser operations.')
+            ->addOption('scroll-warmup', null, InputOption::VALUE_NONE, 'Scroll through the page before capture to trigger scroll-driven lazy content.')
             ->addOption('max-fullpage-height', null, InputOption::VALUE_REQUIRED, 'Maximum full-page height before fallback.')
             ->addOption('context-padding', null, InputOption::VALUE_REQUIRED, 'Padding around a large-page context artifact.')
             ->addOption('shift-tolerance', null, InputOption::VALUE_REQUIRED, 'Pixel shift tolerance for comparison.')
@@ -99,6 +100,7 @@ final class CompareCommand extends Command
                 viewportHeight: $config->viewportHeight,
                 settleMs: $config->settleMs,
                 timeoutMs: $config->timeoutMs,
+                scrollWarmup: $config->scrollWarmup,
                 maxFullpageHeight: $config->maxFullpageHeight,
                 contextPadding: $config->contextPadding,
                 shiftTolerance: $config->shiftTolerance,
@@ -147,6 +149,7 @@ final class CompareCommand extends Command
             'viewport_height' => $input->getOption('viewport-height'),
             'settle_ms' => $input->getOption('settle-ms'),
             'timeout_ms' => $input->getOption('timeout-ms'),
+            'scroll_warmup' => $input->getOption('scroll-warmup'),
             'max_fullpage_height' => $input->getOption('max-fullpage-height'),
             'context_padding' => $input->getOption('context-padding'),
             'shift_tolerance' => $input->getOption('shift-tolerance'),

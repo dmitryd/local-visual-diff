@@ -51,6 +51,7 @@ class ScreenshotService
         int $viewportHeight,
         int $timeoutMs,
         int $settleMs,
+        bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
         ?string $osFamily = null
@@ -67,6 +68,7 @@ class ScreenshotService
             $navigation = $page->navigate($url);
             $navigation->waitForNavigation(Page::LOAD, $timeoutMs);
 
+            $this->warmUpFullPageRendering($timeoutMs, $scrollWarmup, $page);
             $this->pageStabilizer->injectInto($page, $timeoutMs);
             $this->waitMilliseconds($settleMs);
 
@@ -101,6 +103,109 @@ class ScreenshotService
     }
 
     /**
+     * Render a baseline/candidate page pair with both navigations in flight.
+     *
+     * This is intentionally different from calling `capture()` twice. Both
+     * browser tabs are prepared first, then both navigations are started before
+     * we wait for either one. That lets Chromium load the two pages in parallel
+     * and keeps the later screenshots closer together in time.
+     *
+     * @return array{baseline:PageSnapshot, candidate:PageSnapshot}
+     */
+    public function capturePair(
+        string $baselineUrl,
+        string $baselineImagePath,
+        string $candidateUrl,
+        string $candidateImagePath,
+        int $viewportWidth,
+        int $viewportHeight,
+        int $timeoutMs,
+        int $settleMs,
+        bool $scrollWarmup = false,
+        string $acceptLanguage = 'de, en',
+        ?string $configuredBrowserPath = null,
+        ?string $osFamily = null
+    ): array {
+        $baselinePage = null;
+        $candidatePage = null;
+
+        try {
+            $browser = $this->acquireBrowser($configuredBrowserPath, $osFamily);
+            $baselinePage = $browser->createPage();
+            $candidatePage = $browser->createPage();
+
+            $this->preparePageForCapture($baselinePage, $viewportWidth, $viewportHeight, $timeoutMs, $acceptLanguage);
+            $this->preparePageForCapture($candidatePage, $viewportWidth, $viewportHeight, $timeoutMs, $acceptLanguage);
+
+            $baselineNavigation = $baselinePage->navigate($baselineUrl);
+            $candidateNavigation = $candidatePage->navigate($candidateUrl);
+
+            $baselineNavigation->waitForNavigation(Page::LOAD, $timeoutMs);
+            $candidateNavigation->waitForNavigation(Page::LOAD, $timeoutMs);
+
+            $this->warmUpFullPageRendering($timeoutMs, $scrollWarmup, $baselinePage, $candidatePage);
+            $this->pageStabilizer->injectInto($baselinePage, $timeoutMs);
+            $this->pageStabilizer->injectInto($candidatePage, $timeoutMs);
+            $this->waitMilliseconds($settleMs);
+
+            $baselineMetadata = $this->readPageMetadata($baselinePage, $timeoutMs);
+            $candidateMetadata = $this->readPageMetadata($candidatePage, $timeoutMs);
+
+            $baselinePage->screenshot([
+                'format' => 'png',
+                'captureBeyondViewport' => true,
+            ])->saveToFile($baselineImagePath, $timeoutMs);
+
+            $candidatePage->screenshot([
+                'format' => 'png',
+                'captureBeyondViewport' => true,
+            ])->saveToFile($candidateImagePath, $timeoutMs);
+
+            return [
+                'baseline' => new PageSnapshot(
+                    $baselineUrl,
+                    $baselineMetadata['finalUrl'],
+                    $baselineMetadata['title'],
+                    $baselineMetadata['httpStatus'],
+                    $baselineImagePath,
+                    $baselineMetadata['pageHeight'],
+                    $baselineMetadata['navigatorLanguage'],
+                    $baselineMetadata['navigatorLanguages']
+                ),
+                'candidate' => new PageSnapshot(
+                    $candidateUrl,
+                    $candidateMetadata['finalUrl'],
+                    $candidateMetadata['title'],
+                    $candidateMetadata['httpStatus'],
+                    $candidateImagePath,
+                    $candidateMetadata['pageHeight'],
+                    $candidateMetadata['navigatorLanguage'],
+                    $candidateMetadata['navigatorLanguages']
+                ),
+            ];
+        } catch (Throwable $throwable) {
+            throw new RuntimeException(
+                sprintf(
+                    'Could not capture screenshot pair for %s and %s: %s',
+                    $baselineUrl,
+                    $candidateUrl,
+                    $throwable->getMessage()
+                ),
+                0,
+                $throwable
+            );
+        } finally {
+            if ($baselinePage instanceof Page) {
+                $baselinePage->close();
+            }
+
+            if ($candidatePage instanceof Page) {
+                $candidatePage->close();
+            }
+        }
+    }
+
+    /**
      * Reuse one browser process for the whole run.
      *
      * Browser startup was the dominant capture cost during profiling. Reusing a
@@ -123,6 +228,237 @@ class ScreenshotService
         $this->sharedOsFamily = $osFamily;
 
         return $this->sharedBrowser;
+    }
+
+    /**
+     * Trigger lazy-loaded content before full-page capture.
+     *
+     * Chromium's full-page screenshot can capture beyond the current viewport
+     * without eagerly loading all images first. We therefore reveal common
+     * lazy-image attributes and wait for fonts/images/layout to settle.
+     *
+     * Scroll-driven warm-up is intentionally optional. Some sites mutate sticky
+     * navigation or active menu state while scrolling, and those mutations can
+     * create false visual diffs even when a normal browser view is identical.
+     * Evaluations are started for every page before waiting, which keeps
+     * baseline/candidate warm-up concurrent in pair captures.
+     */
+    private function warmUpFullPageRendering(int $timeoutMs, bool $scrollWarmup, Page ...$pages): void
+    {
+        $evaluations = [];
+
+        foreach ($pages as $page) {
+            $evaluations[] = $page->evaluate($this->fullPageWarmUpScript($scrollWarmup));
+        }
+
+        foreach ($evaluations as $evaluation) {
+            $evaluation->getReturnValue($timeoutMs);
+        }
+    }
+
+    private function fullPageWarmUpScript(bool $scrollWarmup): string
+    {
+        $scrollWarmupJson = json_encode($scrollWarmup, JSON_THROW_ON_ERROR);
+
+        return <<<JS
+(async function () {
+    const scrollWarmup = {$scrollWarmupJson};
+    const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+    const lazySourceAttributes = [
+        'data-src',
+        'data-original',
+        'data-lazy-src',
+        'data-echo',
+        'data-url',
+    ];
+
+    const lazySourceSetAttributes = [
+        'data-srcset',
+        'data-lazy-srcset',
+    ];
+
+    const lazyBackgroundAttributes = [
+        'data-background-image',
+        'data-bg',
+        'data-bg-src',
+        'data-lazy-background',
+    ];
+
+    const pageHeight = () => Math.max(
+        document.body ? document.body.scrollHeight : 0,
+        document.documentElement ? document.documentElement.scrollHeight : 0
+    );
+
+    const triggerViewportObservers = () => {
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('resize'));
+        document.dispatchEvent(new Event('scroll'));
+    };
+
+    const firstAttributeValue = (element, attributes) => {
+        for (const attribute of attributes) {
+            const value = element.getAttribute(attribute);
+
+            if (value) {
+                return value;
+            }
+        }
+
+        return '';
+    };
+
+    const revealLazyMedia = () => {
+        document.querySelectorAll('img').forEach((image) => {
+            image.loading = 'eager';
+
+            const source = firstAttributeValue(image, lazySourceAttributes);
+
+            if (source && image.getAttribute('src') !== source) {
+                image.setAttribute('src', source);
+            }
+
+            const sourceSet = firstAttributeValue(image, lazySourceSetAttributes);
+
+            if (sourceSet && image.getAttribute('srcset') !== sourceSet) {
+                image.setAttribute('srcset', sourceSet);
+            }
+        });
+
+        document.querySelectorAll('source').forEach((sourceElement) => {
+            const sourceSet = firstAttributeValue(sourceElement, lazySourceSetAttributes);
+
+            if (sourceSet && sourceElement.getAttribute('srcset') !== sourceSet) {
+                sourceElement.setAttribute('srcset', sourceSet);
+            }
+        });
+
+        document.querySelectorAll('*').forEach((element) => {
+            const background = firstAttributeValue(element, lazyBackgroundAttributes);
+
+            if (background) {
+                element.style.backgroundImage = 'url("' + background.replace(/"/g, '\\"') + '")';
+            }
+        });
+    };
+
+    const incompleteImageCount = () => Array
+        .from(document.images)
+        .filter((image) => !image.complete)
+        .length;
+
+    const waitForImages = async () => {
+        const images = Array
+            .from(document.images)
+            .filter((image) => !image.complete);
+
+        if (images.length === 0) {
+            return;
+        }
+
+        await Promise.race([
+            Promise.all(images.map((image) => new Promise((resolve) => {
+                image.addEventListener('load', resolve, { once: true });
+                image.addEventListener('error', resolve, { once: true });
+            }))),
+            wait(2000),
+        ]);
+    };
+
+    const waitForFonts = async () => {
+        if (!document.fonts || !document.fonts.ready) {
+            return;
+        }
+
+        await Promise.race([
+            document.fonts.ready,
+            wait(2000),
+        ]);
+    };
+
+    revealLazyMedia();
+    triggerViewportObservers();
+    await waitForFonts();
+    await waitForImages();
+
+    if (scrollWarmup) {
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 900;
+        const step = Math.max(200, Math.floor(viewportHeight * 0.8));
+        let previousHeight = 0;
+
+        for (let pass = 0; pass < 3; pass++) {
+            revealLazyMedia();
+
+            const height = pageHeight();
+
+            for (let y = 0; y < height; y += step) {
+                window.scrollTo(0, y);
+                triggerViewportObservers();
+                revealLazyMedia();
+                await wait(80);
+            }
+
+            window.scrollTo(0, height);
+            triggerViewportObservers();
+            revealLazyMedia();
+            await waitForImages();
+            await wait(150);
+
+            const currentHeight = pageHeight();
+
+            if (pass > 0 && Math.abs(currentHeight - previousHeight) < 2) {
+                break;
+            }
+
+            previousHeight = currentHeight;
+        }
+    }
+
+    window.scrollTo(0, 0);
+    triggerViewportObservers();
+
+    let stableChecks = 0;
+    let lastHeight = pageHeight();
+    let lastIncompleteImages = incompleteImageCount();
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+        revealLazyMedia();
+        await waitForImages();
+        await wait(150);
+
+        const currentHeight = pageHeight();
+        const currentIncompleteImages = incompleteImageCount();
+
+        if (currentHeight === lastHeight && currentIncompleteImages === lastIncompleteImages) {
+            stableChecks++;
+        } else {
+            stableChecks = 0;
+        }
+
+        if (stableChecks >= 2) {
+            break;
+        }
+
+        lastHeight = currentHeight;
+        lastIncompleteImages = currentIncompleteImages;
+    }
+
+    return true;
+})()
+JS;
+    }
+
+    /**
+     * Apply deterministic page-level settings before navigation starts.
+     */
+    private function preparePageForCapture(
+        Page $page,
+        int $viewportWidth,
+        int $viewportHeight,
+        int $timeoutMs,
+        string $acceptLanguage
+    ): void {
+        $this->applyLanguagePreferences($page, $acceptLanguage, $timeoutMs);
+        $page->setViewport($viewportWidth, $viewportHeight)->await($timeoutMs);
     }
 
     /**

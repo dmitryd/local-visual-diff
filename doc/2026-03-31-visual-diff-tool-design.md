@@ -302,6 +302,7 @@ viewport_width = 1440
 viewport_height = 900
 settle_ms = 1000
 timeout_ms = 30000
+scroll_warmup = false
 max_fullpage_height = 0
 context_padding = 200
 
@@ -408,14 +409,21 @@ The first version should document this clearly rather than trying to normalize t
 ### Stabilization steps before screenshot
 
 1. Navigate to the page.
-2. Wait for network idle or a configurable timeout.
-3. Inject CSS that disables:
+2. Wait for page load or a configurable timeout.
+3. Reveal common lazy image attributes and wait briefly for fonts/images to settle.
+4. Optionally scroll through the page when `scroll_warmup` is enabled.
+5. Inject CSS that disables:
    - animations
    - transitions
    - caret blinking
    - smooth scrolling
-4. Wait `settle-ms`.
-5. Capture the full page.
+6. Wait `settle-ms`.
+7. Capture the full page.
+
+`scroll_warmup` should be disabled by default. It can help pages that only load
+content after scrolling, but it can also trigger sticky menus or scroll-state
+JavaScript and produce false visual differences compared to a normal first-page
+browser view.
 
 Suggested injected CSS:
 
