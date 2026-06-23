@@ -345,6 +345,44 @@ HTML,
         }
     }
 
+    public function testCaptureFailureIsRetriedBeforeReportingRuntimeError(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local' => [
+                        'captures' => [
+                            ['exception' => 'Browser session is closed'],
+                            ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                        ],
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Retrying / after capture failure:', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(['matching'], array_column($report['results'], 'status'));
+            self::assertSame(0, $report['summary']['runtimeErrorPages']);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testMaxPagesLimitsComparedPagesDuringStreamedCrawl(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
@@ -649,6 +687,10 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
 
         if (!is_array($spec)) {
             throw new RuntimeException(sprintf('No fixture screenshot configured for %s', $url));
+        }
+
+        if (is_string($spec['exception'] ?? null)) {
+            throw new RuntimeException($spec['exception']);
         }
 
         $this->writeImage($imagePath, $spec);

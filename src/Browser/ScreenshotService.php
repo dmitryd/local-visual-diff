@@ -57,6 +57,7 @@ class ScreenshotService
         ?string $osFamily = null
     ): PageSnapshot {
         $page = null;
+        $closeBrowserAfterFailure = false;
 
         try {
             $browser = $this->acquireBrowser($configuredBrowserPath, $osFamily);
@@ -92,6 +93,8 @@ class ScreenshotService
                 $pageMetadata['baseHref']
             );
         } catch (Throwable $throwable) {
+            $closeBrowserAfterFailure = true;
+
             throw new RuntimeException(
                 sprintf('Could not capture screenshot for %s: %s', $url, $throwable->getMessage()),
                 0,
@@ -99,7 +102,11 @@ class ScreenshotService
             );
         } finally {
             if ($page instanceof Page) {
-                $page->close();
+                $this->closePage($page);
+            }
+
+            if ($closeBrowserAfterFailure) {
+                $this->closeBrowser();
             }
         }
     }
@@ -130,6 +137,7 @@ class ScreenshotService
     ): array {
         $baselinePage = null;
         $candidatePage = null;
+        $closeBrowserAfterFailure = false;
 
         try {
             $browser = $this->acquireBrowser($configuredBrowserPath, $osFamily);
@@ -190,6 +198,8 @@ class ScreenshotService
                 ),
             ];
         } catch (Throwable $throwable) {
+            $closeBrowserAfterFailure = true;
+
             throw new RuntimeException(
                 sprintf(
                     'Could not capture screenshot pair for %s and %s: %s',
@@ -202,11 +212,15 @@ class ScreenshotService
             );
         } finally {
             if ($baselinePage instanceof Page) {
-                $baselinePage->close();
+                $this->closePage($baselinePage);
             }
 
             if ($candidatePage instanceof Page) {
-                $candidatePage->close();
+                $this->closePage($candidatePage);
+            }
+
+            if ($closeBrowserAfterFailure) {
+                $this->closeBrowser();
             }
         }
     }
@@ -234,6 +248,16 @@ class ScreenshotService
         $this->sharedOsFamily = $osFamily;
 
         return $this->sharedBrowser;
+    }
+
+    private function closePage(Page $page): void
+    {
+        try {
+            $page->close();
+        } catch (Throwable) {
+            // A broken browser process can also make tab cleanup fail. The
+            // caller will close the shared browser when the capture failed.
+        }
     }
 
     /**

@@ -27,6 +27,8 @@ use Throwable;
  */
 final class ComparisonRunner
 {
+    private const CAPTURE_FAILURE_RETRY_ATTEMPTS = 1;
+
     private const HTTP_CAPTURE_RETRY_ATTEMPTS = 1;
 
     private const HTTP_CAPTURE_RETRY_DELAY_MICROSECONDS = 500000;
@@ -286,19 +288,13 @@ final class ComparisonRunner
         string $candidateUrl,
         string $candidateScreenshotPath
     ): array {
-        $snapshots = $this->screenshotService->capturePair(
+        $snapshots = $this->capturePagePairWithFailureRetry(
+            $configuration,
+            $path,
             $baselineUrl,
             $baselineScreenshotPath,
             $candidateUrl,
-            $candidateScreenshotPath,
-            $configuration->viewportWidth,
-            $configuration->viewportHeight,
-            $configuration->timeoutMs,
-            $configuration->settleMs,
-            $configuration->scrollWarmup,
-            $configuration->acceptLanguage,
-            $configuration->browserPath,
-            PHP_OS_FAMILY
+            $candidateScreenshotPath
         );
 
         for ($attempt = 1; $attempt <= self::HTTP_CAPTURE_RETRY_ATTEMPTS; $attempt++) {
@@ -342,6 +338,49 @@ final class ComparisonRunner
         }
 
         return $snapshots;
+    }
+
+    /**
+     * @return array{baseline:PageSnapshot, candidate:PageSnapshot}
+     */
+    private function capturePagePairWithFailureRetry(
+        RunConfiguration $configuration,
+        string $path,
+        string $baselineUrl,
+        string $baselineScreenshotPath,
+        string $candidateUrl,
+        string $candidateScreenshotPath
+    ): array {
+        for ($attempt = 0; $attempt <= self::CAPTURE_FAILURE_RETRY_ATTEMPTS; $attempt++) {
+            try {
+                return $this->screenshotService->capturePair(
+                    $baselineUrl,
+                    $baselineScreenshotPath,
+                    $candidateUrl,
+                    $candidateScreenshotPath,
+                    $configuration->viewportWidth,
+                    $configuration->viewportHeight,
+                    $configuration->timeoutMs,
+                    $configuration->settleMs,
+                    $configuration->scrollWarmup,
+                    $configuration->acceptLanguage,
+                    $configuration->browserPath,
+                    PHP_OS_FAMILY
+                );
+            } catch (Throwable $throwable) {
+                if ($attempt >= self::CAPTURE_FAILURE_RETRY_ATTEMPTS) {
+                    throw $throwable;
+                }
+
+                $this->logVerbose(
+                    $configuration,
+                    sprintf('Retrying %s after capture failure: %s', $path, $throwable->getMessage())
+                );
+                usleep(self::HTTP_CAPTURE_RETRY_DELAY_MICROSECONDS);
+            }
+        }
+
+        throw new \RuntimeException(sprintf('Could not capture screenshot pair for %s', $path));
     }
 
     private function shouldRetryHttpStatusMismatch(PageSnapshot $baselineSnapshot, PageSnapshot $candidateSnapshot): bool
