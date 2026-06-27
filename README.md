@@ -97,6 +97,15 @@ Run the tool:
 php bin/visual-diff https://baseline.local https://candidate.local
 ```
 
+Compare one explicit page without crawling the whole site:
+
+```bash
+php bin/visual-diff --single-page=/en/check-this/page/ https://baseline.local https://candidate.local
+```
+
+The `--single-page` value is a path/query target, not a full URL. The report is
+generated in the normal format, but contains only that one normalized target.
+
 ## Output
 
 By default, a run writes to:
@@ -246,6 +255,7 @@ Important options:
 - `--ignored-query-param-name-pattern`
 - `--insecure-crawl-fetch`
 - `--max-pages`
+- `--single-page`
 - `--artifact-image-format`
 - `--capture-matching-screenshots`
 - `--overwrite`
@@ -269,6 +279,12 @@ Limit the run to the homepage only:
 
 ```bash
 php bin/visual-diff --max-pages=1 https://legacy.local https://candidate.local
+```
+
+Compare one explicit page only:
+
+```bash
+php bin/visual-diff --single-page=/en/check-this/page/ https://legacy.local https://candidate.local
 ```
 
 Show detailed diagnostics while running:

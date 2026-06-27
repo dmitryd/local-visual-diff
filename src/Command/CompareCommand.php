@@ -7,14 +7,16 @@ namespace LocalVisualDiff\Command;
 use LocalVisualDiff\Browser\BrowserLocator;
 use LocalVisualDiff\Config\IniConfigurationLoader;
 use LocalVisualDiff\Config\RunConfiguration;
+use LocalVisualDiff\Crawl\UrlMapper;
+use LocalVisualDiff\Crawl\UrlNormalizer;
 use LocalVisualDiff\Run\ComparisonRunner;
 use LocalVisualDiff\Support\Clock;
 use LocalVisualDiff\Support\Filesystem;
-use LocalVisualDiff\Crawl\UrlNormalizer;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
@@ -25,6 +27,7 @@ final class CompareCommand extends Command
         private readonly ComparisonRunner $runner = new ComparisonRunner(),
         private readonly BrowserLocator $browserLocator = new BrowserLocator(),
         private readonly UrlNormalizer $urlNormalizer = new UrlNormalizer(),
+        private readonly UrlMapper $urlMapper = new UrlMapper(),
         private readonly Filesystem $filesystem = new Filesystem(),
         private readonly Clock $clock = new Clock()
     ) {
@@ -61,6 +64,7 @@ final class CompareCommand extends Command
             ->addOption('ignored-query-param-name-pattern', null, InputOption::VALUE_REQUIRED, 'Regex for query parameter names that should be removed during crawl deduplication.')
             ->addOption('insecure-crawl-fetch', null, InputOption::VALUE_NONE, 'Disable TLS certificate verification for recursive crawl HTML fetching.')
             ->addOption('max-pages', null, InputOption::VALUE_REQUIRED, 'Maximum number of pages to compare.')
+            ->addOption('single-page', null, InputOption::VALUE_REQUIRED, 'Compare only the given path/query target, for example /en/page?preview=1.')
             ->addOption('artifact-image-format', null, InputOption::VALUE_REQUIRED, 'Stored report artifact image format, for example webp or png.')
             ->addOption('capture-matching-screenshots', null, InputOption::VALUE_NONE, 'Keep screenshots for matching pages.')
             ->addOption('overwrite', null, InputOption::VALUE_NONE, 'Allow existing output directories to be reused.')
@@ -77,6 +81,8 @@ final class CompareCommand extends Command
 
             $this->warnIfBaseUrlWasTrimmed($output, 'baseline', $rawBaselineBaseUrl, $baselineBaseUrl);
             $this->warnIfBaseUrlWasTrimmed($output, 'candidate', $rawCandidateBaseUrl, $candidateBaseUrl);
+
+            $singlePageTarget = $this->normalizeSinglePageTarget($input->getOption('single-page'));
 
             $defaultsPath = dirname(__DIR__, 2) . '/config/defaults.ini';
             $localPath = $this->resolveLocalConfigPath();
@@ -110,6 +116,7 @@ final class CompareCommand extends Command
                 ignoredQueryParamNamePattern: $config->ignoredQueryParamNamePattern,
                 crawlFetchVerifyTls: $config->crawlFetchVerifyTls,
                 maxPages: $config->maxPages,
+                singlePageTarget: $singlePageTarget,
                 captureMatchingScreenshots: $config->captureMatchingScreenshots,
                 artifactImageFormat: $config->artifactImageFormat,
                 overwrite: $config->overwrite,
@@ -127,7 +134,8 @@ final class CompareCommand extends Command
 
             return Command::SUCCESS;
         } catch (Throwable $throwable) {
-            $output->getErrorOutput()->writeln($throwable->getMessage());
+            $errorOutput = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+            $errorOutput->writeln($throwable->getMessage());
 
             return Command::FAILURE;
         }
@@ -166,6 +174,42 @@ final class CompareCommand extends Command
             $overrides,
             static fn (mixed $value): bool => $value !== null && $value !== false
         );
+    }
+
+    /**
+     * Normalize the explicit single-page target accepted by the CLI.
+     */
+    private function normalizeSinglePageTarget(mixed $rawTarget): ?string
+    {
+        if ($rawTarget === null || $rawTarget === false) {
+            return null;
+        }
+
+        if (!is_string($rawTarget) || trim($rawTarget) === '') {
+            throw new \RuntimeException('The --single-page option requires a non-empty path or query target.');
+        }
+
+        $target = trim($rawTarget);
+
+        if (str_contains($target, '#')) {
+            throw new \RuntimeException(sprintf(
+                'The --single-page option does not support URL fragments: %s',
+                $target
+            ));
+        }
+
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $target) === 1 || str_starts_with($target, '//')) {
+            throw new \RuntimeException(sprintf(
+                'The --single-page option accepts only path/query targets, not URLs: %s',
+                $target
+            ));
+        }
+
+        if (!str_starts_with($target, '/') && !str_starts_with($target, '?')) {
+            $target = '/' . $target;
+        }
+
+        return $this->urlMapper->normalizeTarget($target);
     }
 
     private function resolveLocalConfigPath(): ?string

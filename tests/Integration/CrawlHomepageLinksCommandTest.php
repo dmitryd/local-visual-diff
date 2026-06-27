@@ -22,6 +22,83 @@ use Symfony\Component\Console\Tester\CommandTester;
  */
 final class CrawlHomepageLinksCommandTest extends TestCase
 {
+    public function testSinglePageCommandProcessesOnlyExplicitTarget(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local/en/check-this/page' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/should-not-be-crawled">Should not be crawled</a>
+  </body>
+</html>
+HTML,
+                ],
+                [
+                    'http://legacy.local/en/check-this/page' => ['title' => 'Target page', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/en/check-this/page' => ['title' => 'Target page', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--single-page' => '/en/check-this/page/',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing /en/check-this/page ... matching', $tester->getDisplay());
+            self::assertStringNotContainsString('Comparing / ...', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['totalPages']);
+            self::assertSame(['/en/check-this/page'], array_column($report['results'], 'path'));
+            self::assertSame(['matching'], array_column($report['results'], 'status'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testSinglePageCommandNormalizesExplicitQueryTarget(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local/search?a=1&b=2' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local/search?a=1&b=2' => ['title' => 'Search', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/search?a=1&b=2' => ['title' => 'Search', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--single-page' => '/search/?b=2&a=1',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Comparing /search?a=1&b=2 ... matching', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['totalPages']);
+            self::assertSame(['/search?a=1&b=2'], array_column($report['results'], 'path'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testCrawlEnabledCommandProcessesRecursiveDiscoveredLinks(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace LocalVisualDiff\Config;
 
-use Closure;
-use RuntimeException;
-
 /**
  * Immutable runtime settings for one comparison run.
  *
@@ -37,6 +34,7 @@ final class RunConfiguration
         public readonly string $ignoredQueryParamNamePattern = '',
         public readonly bool $crawlFetchVerifyTls = false,
         public readonly int $maxPages = 0,
+        public readonly ?string $singlePageTarget = null,
         public readonly bool $captureMatchingScreenshots = false,
         public readonly string $artifactImageFormat = 'webp',
         public readonly bool $overwrite = false,
@@ -44,7 +42,7 @@ final class RunConfiguration
         public readonly bool $veryVerbose = false,
         public readonly bool $decoratedOutput = false,
         public readonly bool $profile = false,
-        public readonly ?Closure $consoleWriter = null
+        public readonly ?\Closure $consoleWriter = null
     ) {
     }
 
@@ -80,6 +78,7 @@ final class RunConfiguration
             ignoredQueryParamNamePattern: self::regexValue($settings, ['crawl', 'ignored_query_param_name_pattern'], ''),
             crawlFetchVerifyTls: self::boolValue($settings, ['crawl', 'fetch_verify_tls'], false),
             maxPages: self::intValue($settings, ['crawl', 'max_pages'], 0),
+            singlePageTarget: null,
             captureMatchingScreenshots: self::boolValue($settings, ['run', 'capture_matching_screenshots'], false),
             artifactImageFormat: self::stringValue($settings, ['report', 'artifact_image_format'], 'webp') ?? 'webp',
             overwrite: self::boolValue($settings, ['run', 'overwrite'], false)
@@ -150,7 +149,7 @@ final class RunConfiguration
         }
 
         if (@preg_match($value, '') === false) {
-            throw new RuntimeException(sprintf('Invalid ignored query parameter name pattern: %s', $value));
+            throw new \RuntimeException(sprintf('Invalid ignored query parameter name pattern: %s', $value));
         }
 
         return $value;

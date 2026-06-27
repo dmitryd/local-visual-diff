@@ -210,6 +210,28 @@ final class CompareHomepageCommandTest extends TestCase
         }
     }
 
+    public function testSinglePageRejectsInvalidTargets(): void
+    {
+        $invalidTargets = [
+            '' => 'The --single-page option requires a non-empty path or query target.',
+            'http://legacy.local/page' => 'The --single-page option accepts only path/query targets, not URLs:',
+            '//legacy.local/page' => 'The --single-page option accepts only path/query targets, not URLs:',
+            '/page#section' => 'The --single-page option does not support URL fragments:',
+        ];
+
+        foreach ($invalidTargets as $target => $expectedMessage) {
+            $tester = new CommandTester($this->buildCommand([]));
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--single-page' => $target,
+            ]);
+
+            self::assertSame(1, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString($expectedMessage, $tester->getDisplay());
+        }
+    }
+
     public function testDefaultOutputShowsDifferentResultWhenHomepageDiffers(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';

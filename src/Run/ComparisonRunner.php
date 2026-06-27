@@ -53,8 +53,8 @@ final class ComparisonRunner
 
         $generatedAt = $this->clock->formattedNow();
         $pageResults = [];
-        $queue = ['/'];
-        $seen = ['/' => true];
+        $queue = $this->initialQueue($configuration);
+        $seen = array_fill_keys($queue, true);
 
         for ($index = 0; $index < count($queue); $index++) {
             if ($configuration->maxPages > 0 && count($pageResults) >= $configuration->maxPages) {
@@ -420,6 +420,10 @@ final class ComparisonRunner
      */
     private function shouldDiscoverLinks(RunConfiguration $configuration, array $pageComparison): bool
     {
+        if ($configuration->singlePageTarget !== null) {
+            return false;
+        }
+
         if (!$configuration->crawlHomepageLinks) {
             return false;
         }
@@ -588,6 +592,20 @@ final class ComparisonRunner
         }
 
         return $this->fallbackTitle($path, $baselineUrl, $candidateUrl);
+    }
+
+    /**
+     * Return the first queue item for the selected run mode.
+     *
+     * @return array<int, string>
+     */
+    private function initialQueue(RunConfiguration $configuration): array
+    {
+        if ($configuration->singlePageTarget !== null) {
+            return [$configuration->singlePageTarget];
+        }
+
+        return ['/'];
     }
 
     /**
