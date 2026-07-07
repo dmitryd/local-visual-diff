@@ -49,6 +49,9 @@ final class UrlMapperTest extends TestCase
         self::assertNull($mapper->toTarget('http://legacy.local', 'http://legacy.local', 'javascript:void(0)'));
         self::assertNull($mapper->toTarget('http://legacy.local', 'http://legacy.local', '#fragment'));
         self::assertNull($mapper->toTarget('http://legacy.local', 'http://legacy.local', '/assets/site.css'));
+        self::assertNull($mapper->toTarget('http://legacy.local', 'http://legacy.local', '/documents/file.docx'));
+        self::assertNull($mapper->toTarget('http://legacy.local', 'http://legacy.local', '/documents/sheet.xlsx'));
+        self::assertNull($mapper->toTarget('http://legacy.local', 'http://legacy.local', '/documents/slides.pptx'));
     }
 
     public function testNormalizeTargetCollapsesRedundantSlashesDotsAndSortsQueries(): void

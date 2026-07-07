@@ -21,6 +21,7 @@ final class RunSummary
         public readonly int $differentPages,
         public readonly int $httpErrorPages,
         public readonly int $runtimeErrorPages,
+        public readonly int $skippedPages,
         public readonly int $shiftTolerance,
         public readonly bool $captureMatchingScreenshots
     ) {
@@ -46,6 +47,7 @@ final class RunSummary
             'differentPages' => $this->differentPages,
             'httpErrorPages' => $this->httpErrorPages,
             'runtimeErrorPages' => $this->runtimeErrorPages,
+            'skippedPages' => $this->skippedPages,
             'shiftTolerance' => $this->shiftTolerance,
             'captureMatchingScreenshots' => $this->captureMatchingScreenshots,
         ];

@@ -7,6 +7,7 @@ namespace LocalVisualDiff\Tests\Integration;
 use Imagick;
 use ImagickDraw;
 use ImagickPixel;
+use LocalVisualDiff\Browser\NonHtmlDocumentException;
 use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Command\CompareCommand;
@@ -200,6 +201,127 @@ HTML,
             $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
             self::assertSame(2, $report['summary']['totalPages']);
             self::assertSame(['/', '/search?category=cards'], array_column($report['results'], 'path'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testCrawlerDoesNotCaptureObviousDocumentLinks(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => <<<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="/fileadmin/Documents/form.docx">Download form</a>
+    <a href="/about">About</a>
+  </body>
+</html>
+HTML,
+                    'http://legacy.local/about' => '<!doctype html><html><body></body></html>',
+                ],
+                [
+                    'http://legacy.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local' => ['title' => 'Home', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://legacy.local/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/about' => ['title' => 'About', 'httpStatus' => 200, 'pageHeight' => 600],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(2, $report['summary']['totalPages']);
+            self::assertSame(0, $report['summary']['runtimeErrorPages']);
+            self::assertSame(['/', '/about'], array_column($report['results'], 'path'));
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testSinglePageNonHtmlDocumentIsReportedAsSkipped(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [],
+                [
+                    'http://legacy.local/file.docx' => [
+                        'httpStatus' => 200,
+                        'nonHtmlContentType' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--single-page' => '/file.docx',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('Skipping /file.docx ... non-HTML', $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['totalPages']);
+            self::assertSame(1, $report['summary']['skippedPages']);
+            self::assertSame(0, $report['summary']['runtimeErrorPages']);
+            self::assertSame('skipped', $report['results'][0]['status']);
+            self::assertSame(
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                $report['results'][0]['contentTypeBaseline']
+            );
+            self::assertSame('non-html document', $report['results'][0]['skipReason']);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testCandidateNonHtmlDocumentIsReportedAsSkipped(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [],
+                [
+                    'http://legacy.local/download' => ['title' => 'Download', 'httpStatus' => 200, 'pageHeight' => 600],
+                    'http://upgraded.local/download' => [
+                        'httpStatus' => 200,
+                        'nonHtmlContentType' => 'application/pdf',
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--single-page' => '/download',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame('skipped', $report['results'][0]['status']);
+            self::assertSame('', $report['results'][0]['contentTypeBaseline']);
+            self::assertSame('application/pdf', $report['results'][0]['contentTypeCandidate']);
+            self::assertSame(0, $report['summary']['runtimeErrorPages']);
         } finally {
             $this->removeDirectoryIfExists($outputDir);
         }
@@ -768,6 +890,14 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
 
         if (is_string($spec['exception'] ?? null)) {
             throw new RuntimeException($spec['exception']);
+        }
+
+        if (is_string($spec['nonHtmlContentType'] ?? null)) {
+            throw new NonHtmlDocumentException(
+                $url,
+                (int) ($spec['httpStatus'] ?? 200),
+                $spec['nonHtmlContentType']
+            );
         }
 
         $this->writeImage($imagePath, $spec);

@@ -51,6 +51,7 @@ final class ReportViewModelFactory
             'differentPages' => (int) ($summary['differentPages'] ?? $counts['different']),
             'httpErrorPages' => (int) ($summary['httpErrorPages'] ?? $counts['http_error']),
             'runtimeErrorPages' => (int) ($summary['runtimeErrorPages'] ?? $counts['runtime_error']),
+            'skippedPages' => (int) ($summary['skippedPages'] ?? $counts['skipped']),
             'shiftTolerance' => (int) ($summary['shiftTolerance'] ?? 0),
             'captureMatchingScreenshots' => (bool) ($summary['captureMatchingScreenshots'] ?? false),
         ];
@@ -67,6 +68,7 @@ final class ReportViewModelFactory
             'different' => 0,
             'http_error' => 0,
             'runtime_error' => 0,
+            'skipped' => 0,
         ];
 
         foreach ($rows as $row) {
@@ -118,6 +120,9 @@ final class ReportViewModelFactory
             'httpStatusBaseline' => $httpStatusBaseline,
             'httpStatusCandidate' => $httpStatusCandidate,
             'httpStatusLabel' => $httpStatusLabel,
+            'contentTypeBaseline' => (string) ($result['contentTypeBaseline'] ?? ''),
+            'contentTypeCandidate' => (string) ($result['contentTypeCandidate'] ?? ''),
+            'skipReason' => (string) ($result['skipReason'] ?? ''),
         ];
     }
 

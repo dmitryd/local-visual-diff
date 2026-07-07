@@ -63,6 +63,8 @@ class ScreenshotService
             $browser = $this->acquireBrowser($configuredBrowserPath, $osFamily);
             $page = $browser->createPage();
             $this->applyLanguagePreferences($page, $acceptLanguage, $timeoutMs);
+            $this->enableNetworkEvents($page, $timeoutMs);
+            $this->watchMainDocumentContentType($page);
 
             $page->setViewport($viewportWidth, $viewportHeight)->await($timeoutMs);
 
@@ -92,6 +94,8 @@ class ScreenshotService
                 $pageMetadata['hrefs'],
                 $pageMetadata['baseHref']
             );
+        } catch (NonHtmlDocumentException $exception) {
+            throw $exception;
         } catch (Throwable $throwable) {
             $closeBrowserAfterFailure = true;
 
@@ -146,6 +150,10 @@ class ScreenshotService
 
             $this->preparePageForCapture($baselinePage, $viewportWidth, $viewportHeight, $timeoutMs, $acceptLanguage);
             $this->preparePageForCapture($candidatePage, $viewportWidth, $viewportHeight, $timeoutMs, $acceptLanguage);
+            $this->enableNetworkEvents($baselinePage, $timeoutMs);
+            $this->enableNetworkEvents($candidatePage, $timeoutMs);
+            $this->watchMainDocumentContentType($baselinePage, 'baseline');
+            $this->watchMainDocumentContentType($candidatePage, 'candidate');
 
             $baselineNavigation = $baselinePage->navigate($baselineUrl);
             $candidateNavigation = $candidatePage->navigate($candidateUrl);
@@ -197,6 +205,8 @@ class ScreenshotService
                     $candidateMetadata['baseHref']
                 ),
             ];
+        } catch (NonHtmlDocumentException $exception) {
+            throw $exception;
         } catch (Throwable $throwable) {
             $closeBrowserAfterFailure = true;
 
@@ -489,6 +499,75 @@ JS;
     ): void {
         $this->applyLanguagePreferences($page, $acceptLanguage, $timeoutMs);
         $page->setViewport($viewportWidth, $viewportHeight)->await($timeoutMs);
+    }
+
+    /**
+     * Enable response events so non-HTML main documents can be skipped without
+     * issuing a separate HTTP request before browser navigation.
+     *
+     * @throws CommunicationException
+     */
+    private function enableNetworkEvents(Page $page, int $timeoutMs): void
+    {
+        $response = $page->getSession()->sendMessageSync(
+            new Message('Network.enable'),
+            $timeoutMs
+        );
+
+        if (!$response->isSuccessful()) {
+            throw new CommunicationException((string) $response->getErrorMessage());
+        }
+    }
+
+    /**
+     * Watch the main frame's document response and abort capture for non-HTML.
+     */
+    private function watchMainDocumentContentType(Page $page, string $side = ''): void
+    {
+        $mainFrameId = $page->getFrameManager()->getMainFrame()->getFrameId();
+
+        $page->getSession()->on(
+            'method:Network.responseReceived',
+            static function (array $params) use ($mainFrameId, $side): void {
+                if (($params['type'] ?? '') !== 'Document' || ($params['frameId'] ?? '') !== $mainFrameId) {
+                    return;
+                }
+
+                $response = is_array($params['response'] ?? null) ? $params['response'] : [];
+                $headers = is_array($response['headers'] ?? null) ? $response['headers'] : [];
+                $contentType = self::headerValue($headers, 'content-type');
+                $mimeType = (string) ($response['mimeType'] ?? '');
+
+                if (!HtmlDocumentContentType::isKnownNonHtml($contentType, $mimeType)) {
+                    return;
+                }
+
+                throw new NonHtmlDocumentException(
+                    (string) ($response['url'] ?? ''),
+                    is_numeric($response['status'] ?? null) ? (int) $response['status'] : 0,
+                    HtmlDocumentContentType::preferredType($contentType, $mimeType),
+                    $side
+                );
+            }
+        );
+    }
+
+    /**
+     * Read a response header case-insensitively from CDP's header map.
+     *
+     * @param array<string, mixed> $headers
+     */
+    private static function headerValue(array $headers, string $name): string
+    {
+        foreach ($headers as $headerName => $value) {
+            if (strtolower((string) $headerName) !== strtolower($name)) {
+                continue;
+            }
+
+            return trim((string) $value);
+        }
+
+        return '';
     }
 
     /**

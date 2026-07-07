@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LocalVisualDiff\Run;
 
+use LocalVisualDiff\Browser\NonHtmlDocumentException;
 use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Crawl\UrlMapper;
@@ -126,6 +127,12 @@ final class ComparisonRunner
             );
             $baselineSnapshot = $snapshots['baseline'];
             $candidateSnapshot = $snapshots['candidate'];
+        } catch (NonHtmlDocumentException $exception) {
+            $this->filesystem->removeFileIfExists($baselineScreenshotPath);
+            $this->filesystem->removeFileIfExists($candidateScreenshotPath);
+            $this->filesystem->removeDirectoryIfEmpty($pageDir);
+
+            return $this->skippedPageComparison($path, $baselineUrl, $candidateUrl, $exception);
         } catch (Throwable $throwable) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
@@ -328,6 +335,8 @@ final class ComparisonRunner
                     $configuration->browserPath,
                     PHP_OS_FAMILY
                 );
+            } catch (NonHtmlDocumentException $exception) {
+                throw $exception;
             } catch (Throwable $throwable) {
                 $this->logVerbose(
                     $configuration,
@@ -367,6 +376,8 @@ final class ComparisonRunner
                     $configuration->browserPath,
                     PHP_OS_FAMILY
                 );
+            } catch (NonHtmlDocumentException $exception) {
+                throw $exception;
             } catch (Throwable $throwable) {
                 if ($attempt >= self::CAPTURE_FAILURE_RETRY_ATTEMPTS) {
                     throw $throwable;
@@ -409,6 +420,50 @@ final class ComparisonRunner
             'baselineSnapshot' => $baselineSnapshot,
             'candidateSnapshot' => $candidateSnapshot,
         ];
+    }
+
+    /**
+     * Build a skipped comparison result for a non-HTML document.
+     *
+     * @return array{
+     *   result:PageResult,
+     *   baselineSnapshot:?PageSnapshot,
+     *   candidateSnapshot:?PageSnapshot
+     * }
+     */
+    private function skippedPageComparison(
+        string $path,
+        string $baselineUrl,
+        string $candidateUrl,
+        NonHtmlDocumentException $exception
+    ): array {
+        $isBaseline = $exception->side === 'baseline'
+            || ($exception->side === ''
+                && (
+                    $exception->url === ''
+                    || $exception->url === $baselineUrl
+                    || $this->urlMapper->isSameOrigin($baselineUrl, $exception->url)
+                ));
+        $contentTypeBaseline = $isBaseline ? $exception->contentType : '';
+        $contentTypeCandidate = $isBaseline ? '' : $exception->contentType;
+        $httpStatusBaseline = $isBaseline ? $exception->httpStatus : 0;
+        $httpStatusCandidate = $isBaseline ? 0 : $exception->httpStatus;
+
+        return $this->pageComparison(
+            new PageResult(
+                $path,
+                $this->fallbackTitle($path, $baselineUrl, $candidateUrl),
+                'skipped',
+                $baselineUrl,
+                $candidateUrl,
+                $httpStatusBaseline,
+                $httpStatusCandidate,
+                [],
+                $contentTypeBaseline,
+                $contentTypeCandidate,
+                'non-html document'
+            )
+        );
     }
 
     /**
@@ -525,6 +580,7 @@ final class ComparisonRunner
             'different' => 0,
             'http_error' => 0,
             'runtime_error' => 0,
+            'skipped' => 0,
         ];
 
         foreach ($pageResults as $pageResult) {
@@ -545,6 +601,7 @@ final class ComparisonRunner
             differentPages: $counts['different'],
             httpErrorPages: $counts['http_error'],
             runtimeErrorPages: $counts['runtime_error'],
+            skippedPages: $counts['skipped'],
             shiftTolerance: $configuration->shiftTolerance,
             captureMatchingScreenshots: $configuration->captureMatchingScreenshots
         );
@@ -653,9 +710,11 @@ final class ComparisonRunner
             $statusLabel = $this->colorizedStatusLabel($pageResult, $statusLabel);
         }
 
+        $verb = $pageResult->status === 'skipped' ? 'Skipping' : 'Comparing';
+
         $this->emitConsoleLine(
             $configuration,
-            sprintf('Comparing %s ... %s', $pageResult->path, $statusLabel)
+            sprintf('%s %s ... %s', $verb, $pageResult->path, $statusLabel)
         );
     }
 
@@ -666,6 +725,7 @@ final class ComparisonRunner
             'different' => 'different',
             'http_error' => $this->httpErrorLabel($pageResult),
             'runtime_error' => 'runtime error',
+            'skipped' => 'non-HTML',
             default => $pageResult->status,
         };
 
@@ -710,6 +770,7 @@ final class ComparisonRunner
             'matching' => sprintf('<fg=green>%s</>', $statusLabel),
             'different' => sprintf('<fg=yellow>%s</>', $statusLabel),
             'http_error', 'runtime_error' => sprintf('<fg=red>%s</>', $statusLabel),
+            'skipped' => sprintf('<fg=yellow>%s</>', $statusLabel),
             default => $statusLabel,
         };
     }

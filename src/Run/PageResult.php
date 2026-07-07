@@ -24,7 +24,10 @@ final class PageResult
         public readonly string $candidateUrl,
         public readonly int $httpStatusBaseline,
         public readonly int $httpStatusCandidate,
-        public readonly array $artifacts = []
+        public readonly array $artifacts = [],
+        public readonly string $contentTypeBaseline = '',
+        public readonly string $contentTypeCandidate = '',
+        public readonly string $skipReason = ''
     ) {
     }
 
@@ -44,6 +47,9 @@ final class PageResult
             'httpStatusBaseline' => $this->httpStatusBaseline,
             'httpStatusCandidate' => $this->httpStatusCandidate,
             'artifacts' => $this->artifacts,
+            'contentTypeBaseline' => $this->contentTypeBaseline,
+            'contentTypeCandidate' => $this->contentTypeCandidate,
+            'skipReason' => $this->skipReason,
         ];
     }
 }
