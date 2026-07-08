@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LocalVisualDiff;
 
+use LocalVisualDiff\Command\CompareImagePairCommand;
 use LocalVisualDiff\Command\CompareCommand;
 use Symfony\Component\Console\Application;
 
@@ -12,15 +13,15 @@ final class ApplicationFactory
     /**
      * Build the console application for the tool.
      *
-     * The application currently exposes a single default command because the
-     * first implementation milestone only needs one workflow: compare a
-     * baseline site against a candidate site.
+     * The public entrypoint stays in single-command mode, while the worker
+     * entrypoint can address hidden internal commands by name.
      */
-    public static function create(): Application
+    public static function create(bool $singleCommand = true): Application
     {
         $application = new Application('local-visual-diff');
         $application->add(new CompareCommand());
-        $application->setDefaultCommand('compare', true);
+        $application->add(new CompareImagePairCommand());
+        $application->setDefaultCommand('compare', $singleCommand);
 
         return $application;
     }

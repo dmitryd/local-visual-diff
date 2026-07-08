@@ -10,6 +10,9 @@ use ImagickPixel;
 use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Command\CompareCommand;
+use LocalVisualDiff\Compare\ComparisonResult;
+use LocalVisualDiff\Compare\ImageComparisonFailedException;
+use LocalVisualDiff\Compare\ImageComparatorInterface;
 use LocalVisualDiff\Run\ComparisonRunner;
 use LocalVisualDiff\Support\Clock;
 use LocalVisualDiff\Support\Slugger;
@@ -169,6 +172,47 @@ final class CompareHomepageCommandTest extends TestCase
             self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
             self::assertStringContainsString('Comparing / ... matching', $tester->getDisplay());
             self::assertStringContainsString('Report written to', $tester->getDisplay());
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
+    public function testComparisonFailureBecomesRuntimeErrorAndReportIsWritten(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                    'http://upgraded.local' => [
+                        'title' => 'Home',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                    ],
+                ],
+                new FailingImageComparator()
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+            self::assertStringContainsString('image comparison failed in worker: memory exhausted', $tester->getDisplay());
+            self::assertFileExists($outputDir . DIRECTORY_SEPARATOR . 'report.html');
+            self::assertFileExists($outputDir . DIRECTORY_SEPARATOR . 'report.json');
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame(1, $report['summary']['runtimeErrorPages']);
+            self::assertSame('runtime_error', $report['results'][0]['status']);
         } finally {
             $this->removeDirectoryIfExists($outputDir);
         }
@@ -491,11 +535,12 @@ final class CompareHomepageCommandTest extends TestCase
      *
      * @param array<string, array<string, mixed>> $snapshots
      */
-    private function buildCommand(array $snapshots): CompareCommand
+    private function buildCommand(array $snapshots, ?ImageComparatorInterface $imageComparator = null): CompareCommand
     {
         return new CompareCommand(
             runner: new ComparisonRunner(
-                screenshotService: new HomepageFixtureScreenshotService($snapshots)
+                screenshotService: new HomepageFixtureScreenshotService($snapshots),
+                imageComparator: $imageComparator
             ),
             clock: new class () extends Clock {
                 public function timestampForRunDirectory(): string
@@ -532,6 +577,25 @@ final class CompareHomepageCommandTest extends TestCase
         }
 
         rmdir($path);
+    }
+}
+
+/**
+ * Test double that simulates an isolated image worker failure.
+ */
+final class FailingImageComparator implements ImageComparatorInterface
+{
+    public function compare(
+        string $baselinePath,
+        string $candidatePath,
+        int $shiftTolerance = 0,
+        int $colorThreshold = 0,
+        ?string $artifactDirectory = null,
+        int $pageHeight = 0,
+        int $maxFullpageHeight = 0,
+        int $contextPadding = 200
+    ): ComparisonResult {
+        throw new ImageComparisonFailedException('image comparison failed in worker: memory exhausted');
     }
 }
 

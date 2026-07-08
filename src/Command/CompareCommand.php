@@ -61,6 +61,7 @@ final class CompareCommand extends Command
             ->addOption('context-padding', null, InputOption::VALUE_REQUIRED, 'Padding around a large-page context artifact.')
             ->addOption('shift-tolerance', null, InputOption::VALUE_REQUIRED, 'Pixel shift tolerance for comparison.')
             ->addOption('color-threshold', null, InputOption::VALUE_REQUIRED, 'Color threshold for pixel comparison.')
+            ->addOption('image-compare-memory-limit', null, InputOption::VALUE_REQUIRED, 'Memory limit for the internal image comparison worker.')
             ->addOption('ignored-query-param-name-pattern', null, InputOption::VALUE_REQUIRED, 'Regex for query parameter names that should be removed during crawl deduplication.')
             ->addOption('insecure-crawl-fetch', null, InputOption::VALUE_NONE, 'Disable TLS certificate verification for recursive crawl HTML fetching.')
             ->addOption('max-pages', null, InputOption::VALUE_REQUIRED, 'Maximum number of pages to compare.')
@@ -112,6 +113,7 @@ final class CompareCommand extends Command
                 shiftTolerance: $config->shiftTolerance,
                 colorThreshold: $config->colorThreshold,
                 overlayOpacity: $config->overlayOpacity,
+                imageCompareMemoryLimit: $config->imageCompareMemoryLimit,
                 crawlHomepageLinks: $config->crawlHomepageLinks,
                 ignoredQueryParamNamePattern: $config->ignoredQueryParamNamePattern,
                 crawlFetchVerifyTls: $config->crawlFetchVerifyTls,
@@ -162,6 +164,7 @@ final class CompareCommand extends Command
             'context_padding' => $input->getOption('context-padding'),
             'shift_tolerance' => $input->getOption('shift-tolerance'),
             'color_threshold' => $input->getOption('color-threshold'),
+            'image_compare_memory_limit' => $input->getOption('image-compare-memory-limit'),
             'ignored_query_param_name_pattern' => $input->getOption('ignored-query-param-name-pattern'),
             'fetch_verify_tls' => $input->getOption('insecure-crawl-fetch') ? false : null,
             'max_pages' => $input->getOption('max-pages'),

@@ -82,6 +82,25 @@ final class ImageComparatorTest extends TestCase
         self::assertFileExists($result->artifacts['context']);
     }
 
+    public function testHighlyFragmentedDiffWritesArtifacts(): void
+    {
+        $workdir = $this->createWorkdir('fragmented');
+        $baseline = $workdir . '/baseline.png';
+        $candidate = $workdir . '/candidate.png';
+
+        $this->createSceneImage($baseline, 80, 80, 0, 0, 0, 0, 'white');
+        $this->createCheckerboardImage($candidate, 80, 80);
+
+        $result = (new ImageComparator())->compare($baseline, $candidate, 0, 0, $workdir . '/artifacts');
+
+        self::assertSame('different', $result->status);
+        self::assertGreaterThan(3000, $result->changedPixelCount);
+        self::assertFileExists($result->artifacts['baseline']);
+        self::assertFileExists($result->artifacts['candidate']);
+        self::assertFileExists($result->artifacts['overlay']);
+        self::assertFileExists($result->artifacts['diff']);
+    }
+
     private function createWorkdir(string $name): string
     {
         $directory = sys_get_temp_dir() . '/local-visual-diff-' . $name . '-' . bin2hex(random_bytes(4));
@@ -116,5 +135,29 @@ final class ImageComparatorTest extends TestCase
 
         $image->drawImage($draw);
         $image->writeImage($path);
+        $image->clear();
+    }
+
+    private function createCheckerboardImage(string $path, int $width, int $height): void
+    {
+        $image = new Imagick();
+        $image->newImage($width, $height, new ImagickPixel('white'), 'png');
+        $image->setImageFormat('png');
+
+        $draw = new ImagickDraw();
+        $draw->setFillColor(new ImagickPixel('black'));
+        $draw->setStrokeColor(new ImagickPixel('black'));
+        $draw->setStrokeWidth(1);
+        $draw->setStrokeAntialias(false);
+
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = $y % 2; $x < $width; $x += 2) {
+                $draw->point($x, $y);
+            }
+        }
+
+        $image->drawImage($draw);
+        $image->writeImage($path);
+        $image->clear();
     }
 }

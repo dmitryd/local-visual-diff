@@ -8,7 +8,9 @@ use LocalVisualDiff\Browser\NonHtmlDocumentException;
 use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Crawl\UrlMapper;
-use LocalVisualDiff\Compare\ImageComparator;
+use LocalVisualDiff\Compare\ImageComparisonFailedException;
+use LocalVisualDiff\Compare\ImageComparatorInterface;
+use LocalVisualDiff\Compare\SubprocessImageComparator;
 use LocalVisualDiff\Config\RunConfiguration;
 use LocalVisualDiff\Report\ReportRenderer;
 use LocalVisualDiff\Report\ReportViewModelFactory;
@@ -36,7 +38,7 @@ final class ComparisonRunner
 
     public function __construct(
         private readonly ScreenshotService $screenshotService = new ScreenshotService(),
-        private readonly ImageComparator $imageComparator = new ImageComparator(),
+        private readonly ?ImageComparatorInterface $imageComparator = null,
         private readonly UrlMapper $urlMapper = new UrlMapper(),
         private readonly ReportViewModelFactory $reportViewModelFactory = new ReportViewModelFactory(),
         private readonly ReportRenderer $reportRenderer = new ReportRenderer(),
@@ -106,7 +108,10 @@ final class ComparisonRunner
         $pageDir = $this->filesystem->joinPath($outputDir, 'pages', $pageSlug);
         $this->filesystem->ensureDirectory($pageDir);
         $artifactImageWriter = new ArtifactImageWriter($configuration->artifactImageFormat);
-        $imageComparator = $this->imageComparatorFor($configuration->artifactImageFormat);
+        $imageComparator = $this->imageComparatorFor(
+            $configuration->artifactImageFormat,
+            $configuration->imageCompareMemoryLimit
+        );
 
         $baselineUrl = $this->joinBaseUrlAndPath($configuration->baselineBaseUrl, $path);
         $candidateUrl = $this->joinBaseUrlAndPath($configuration->candidateBaseUrl, $path);
@@ -194,6 +199,10 @@ final class ComparisonRunner
                 )
             );
         } catch (Throwable $throwable) {
+            if ($throwable instanceof ImageComparisonFailedException) {
+                $this->logVerbose($configuration, $throwable->getMessage());
+            }
+
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
             $this->filesystem->removeDirectoryIfEmpty($pageDir);
@@ -804,12 +813,12 @@ final class ComparisonRunner
         $artifactImageWriter->writeImage($image, $targetPath);
     }
 
-    private function imageComparatorFor(string $artifactImageFormat): ImageComparator
+    private function imageComparatorFor(string $artifactImageFormat, string $memoryLimit): ImageComparatorInterface
     {
-        if (strtolower(trim($artifactImageFormat)) === 'webp') {
+        if ($this->imageComparator !== null) {
             return $this->imageComparator;
         }
 
-        return new ImageComparator(new ArtifactImageWriter($artifactImageFormat));
+        return new SubprocessImageComparator($artifactImageFormat, $memoryLimit);
     }
 }

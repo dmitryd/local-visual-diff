@@ -109,6 +109,7 @@ final class IniConfigurationLoader
                 case 'shift_tolerance':
                 case 'color_threshold':
                 case 'overlay_opacity':
+                case 'image_compare_memory_limit':
                     $nested['compare'][$key] = $value;
                     break;
                 case 'crawl_homepage_links':

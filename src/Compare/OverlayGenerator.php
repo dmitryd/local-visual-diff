@@ -36,7 +36,12 @@ final class OverlayGenerator
 
         $baseline->compositeImage($candidate, Imagick::COMPOSITE_OVER, 0, 0);
 
-        return $this->artifactImageWriter->writeImage($baseline, $outputPath);
+        try {
+            return $this->artifactImageWriter->writeImage($baseline, $outputPath);
+        } finally {
+            $baseline->clear();
+            $candidate->clear();
+        }
     }
 
     private function normalizeCanvas(Imagick $image, int $width, int $height): Imagick

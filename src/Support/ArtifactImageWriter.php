@@ -94,11 +94,15 @@ final class ArtifactImageWriter
 
         $clone->setImageFormat($format);
 
-        if ($clone->writeImage($outputPath) === false) {
-            throw new RuntimeException(sprintf('Could not write artifact image: %s', $outputPath));
-        }
+        try {
+            if ($clone->writeImage($outputPath) === false) {
+                throw new RuntimeException(sprintf('Could not write artifact image: %s', $outputPath));
+            }
 
-        return $outputPath;
+            return $outputPath;
+        } finally {
+            $clone->clear();
+        }
     }
 
     /**

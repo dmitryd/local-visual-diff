@@ -15,14 +15,16 @@ use LocalVisualDiff\Support\ArtifactImageWriter;
  */
 final class DiffImageGenerator
 {
+    private const DRAW_CHUNK_SIZE = 10000;
+
     public function __construct(private readonly ArtifactImageWriter $artifactImageWriter = new ArtifactImageWriter())
     {
     }
 
     /**
-     * @param array<int, array{y:int,startX:int,endX:int}> $changedRuns
+     * @param iterable<int, array{y:int,startX:int,endX:int}> $changedRuns
      */
-    public function generate(Imagick $baselineImage, array $changedRuns, string $outputPath): string
+    public function generate(Imagick $baselineImage, iterable $changedRuns, string $outputPath): string
     {
         $image = clone $baselineImage;
         $image->modulateImage(65, 0, 100);
@@ -30,13 +32,30 @@ final class DiffImageGenerator
         $highlight = new ImagickPixel('rgba(255,0,0,1)');
         $draw = new ImagickDraw();
         $draw->setFillColor($highlight);
+        $drawnRuns = 0;
 
         foreach ($changedRuns as $run) {
             $draw->line($run['startX'], $run['y'], $run['endX'], $run['y']);
+            $drawnRuns++;
+
+            if ($drawnRuns % self::DRAW_CHUNK_SIZE === 0) {
+                $image->drawImage($draw);
+                $draw->clear();
+                $draw = new ImagickDraw();
+                $draw->setFillColor($highlight);
+            }
         }
 
-        $image->drawImage($draw);
+        if ($drawnRuns % self::DRAW_CHUNK_SIZE !== 0) {
+            $image->drawImage($draw);
+        }
 
-        return $this->artifactImageWriter->writeImage($image, $outputPath);
+        $draw->clear();
+
+        try {
+            return $this->artifactImageWriter->writeImage($image, $outputPath);
+        } finally {
+            $image->clear();
+        }
     }
 }

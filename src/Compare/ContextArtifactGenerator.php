@@ -46,7 +46,12 @@ final class ContextArtifactGenerator
         $candidate->cropImage($width, $cropHeight, 0, $cropTop);
         $candidate->setImagePage(0, 0, 0, 0);
 
-        return $this->overlayGenerator->generate($baseline, $candidate, $outputPath);
+        try {
+            return $this->overlayGenerator->generate($baseline, $candidate, $outputPath);
+        } finally {
+            $baseline->clear();
+            $candidate->clear();
+        }
     }
 
     private function ensureDirectoryExists(string $outputPath): void

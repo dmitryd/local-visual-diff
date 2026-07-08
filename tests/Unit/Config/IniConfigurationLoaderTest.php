@@ -39,6 +39,7 @@ context_padding = 200
 shift_tolerance = 0
 color_threshold = 0
 overlay_opacity = 0.5
+image_compare_memory_limit = "512M"
 
 [crawl]
 crawl_homepage_links = true
@@ -64,7 +65,10 @@ INI);
         $config = $loader->load(
             $defaultsPath,
             $localPath,
-            ['browser_path' => '/custom/browser']
+            [
+                'browser_path' => '/custom/browser',
+                'image_compare_memory_limit' => '768M',
+            ]
         );
 
         self::assertSame('/custom/browser', $config->browserPath);
@@ -73,6 +77,7 @@ INI);
         self::assertSame(900, $config->viewportHeight);
         self::assertSame('var/results', $config->outputDir);
         self::assertSame('webp', $config->artifactImageFormat);
+        self::assertSame('768M', $config->imageCompareMemoryLimit);
         self::assertTrue($config->crawlHomepageLinks);
         self::assertSame('', $config->ignoredQueryParamNamePattern);
         self::assertFalse($config->crawlFetchVerifyTls);
