@@ -14,6 +14,10 @@ namespace LocalVisualDiff\Support;
  */
 final class Slugger
 {
+    protected const int MAX_FILENAME_LENGTH = 255;
+
+    protected const int HASH_LENGTH = 8;
+
     public function slugPath(string $path): string
     {
         $path = trim($path);
@@ -27,7 +31,11 @@ final class Slugger
         $slug = trim($slug, '-');
 
         $slug = $slug === '' ? 'page' : $slug;
+        $hash = substr(sha1($path), 0, self::HASH_LENGTH);
+        $maxReadableLength = self::MAX_FILENAME_LENGTH - self::HASH_LENGTH - 1;
+        $slug = substr($slug, 0, $maxReadableLength);
+        $slug = rtrim($slug, '-');
 
-        return sprintf('%s-%s', $slug, substr(sha1($path), 0, 8));
+        return sprintf('%s-%s', $slug, $hash);
     }
 }

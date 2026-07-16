@@ -276,6 +276,55 @@ final class CompareHomepageCommandTest extends TestCase
         }
     }
 
+    public function testSinglePageWithLongPathWritesReportArtifacts(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        $target = '/fr/themes/food/projets-soutenus-dans-le-cadre-de-linitiative-food-40-systeme-de-mesure-pour-la-caracterisation-en-ligne-de-la-texture-de-produits-alimentaires-contenant-des-proteines-structurees-vegetales-hybrides-dans-le-contexte-de-la-numerisation-de-la-chaine-de-valeur';
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' . $target => [
+                        'title' => 'Long page',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                    ],
+                    'http://upgraded.local' . $target => [
+                        'title' => 'Long page',
+                        'httpStatus' => 200,
+                        'pageHeight' => 600,
+                        'background' => 'white',
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--single-page' => $target,
+                '--capture-matching-screenshots' => true,
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $slug = $this->slugger->slugPath($target);
+            self::assertLessThanOrEqual(255, strlen($slug));
+            self::assertFileExists($outputDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . $slug . DIRECTORY_SEPARATOR . 'baseline.webp');
+            self::assertFileExists($outputDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . $slug . DIRECTORY_SEPARATOR . 'candidate.webp');
+
+            $report = json_decode((string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'), true, 512, JSON_THROW_ON_ERROR);
+            self::assertSame($target, $report['results'][0]['path']);
+            self::assertSame('pages/' . $slug . '/baseline.webp', $report['results'][0]['baselineScreenshotUrl']);
+            self::assertSame('pages/' . $slug . '/candidate.webp', $report['results'][0]['candidateScreenshotUrl']);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testDefaultOutputShowsDifferentResultWhenHomepageDiffers(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
