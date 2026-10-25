@@ -30,7 +30,8 @@ class ScreenshotService
 
     public function __construct(
         private readonly BrowserFactory $browserFactory = new BrowserFactory(),
-        private readonly PageStabilizer $pageStabilizer = new PageStabilizer()
+        private readonly PageStabilizer $pageStabilizer = new PageStabilizer(),
+        protected readonly PageElementMasker $pageElementMasker = new PageElementMasker()
     ) {
     }
 
@@ -54,7 +55,8 @@ class ScreenshotService
         bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
-        ?string $osFamily = null
+        ?string $osFamily = null,
+        string $maskSelector = ''
     ): PageSnapshot {
         $page = null;
         $closeBrowserAfterFailure = false;
@@ -76,6 +78,7 @@ class ScreenshotService
             $this->waitMilliseconds($settleMs);
 
             $pageMetadata = $this->readPageMetadata($page, $timeoutMs);
+            $this->pageElementMasker->injectInto($page, $maskSelector, $timeoutMs);
 
             $page->screenshot([
                 'format' => 'png',
@@ -94,7 +97,7 @@ class ScreenshotService
                 $pageMetadata['hrefs'],
                 $pageMetadata['baseHref']
             );
-        } catch (NonHtmlDocumentException $exception) {
+        } catch (NonHtmlDocumentException | PageMaskingException $exception) {
             throw $exception;
         } catch (Throwable $throwable) {
             $closeBrowserAfterFailure = true;
@@ -137,7 +140,8 @@ class ScreenshotService
         bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
-        ?string $osFamily = null
+        ?string $osFamily = null,
+        string $maskSelector = ''
     ): array {
         $baselinePage = null;
         $candidatePage = null;
@@ -168,6 +172,8 @@ class ScreenshotService
 
             $baselineMetadata = $this->readPageMetadata($baselinePage, $timeoutMs);
             $candidateMetadata = $this->readPageMetadata($candidatePage, $timeoutMs);
+            $this->pageElementMasker->injectInto($baselinePage, $maskSelector, $timeoutMs);
+            $this->pageElementMasker->injectInto($candidatePage, $maskSelector, $timeoutMs);
 
             $baselinePage->screenshot([
                 'format' => 'png',
@@ -205,7 +211,7 @@ class ScreenshotService
                     $candidateMetadata['baseHref']
                 ),
             ];
-        } catch (NonHtmlDocumentException $exception) {
+        } catch (NonHtmlDocumentException | PageMaskingException $exception) {
             throw $exception;
         } catch (Throwable $throwable) {
             $closeBrowserAfterFailure = true;

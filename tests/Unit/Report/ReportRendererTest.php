@@ -25,6 +25,7 @@ final class ReportRendererTest extends TestCase
                 'candidateBaseUrl' => 'http://upgraded.local',
                 'generatedAt' => '2026-03-31 10:30:00',
                 'shiftTolerance' => 3,
+                'maskSelector' => 'img.hero',
                 'captureMatchingScreenshots' => true,
             ],
             [
@@ -77,6 +78,8 @@ final class ReportRendererTest extends TestCase
         self::assertStringContainsString('enabled', $html);
         self::assertStringContainsString('matching', $html);
         self::assertStringContainsString('different', $html);
+        self::assertStringContainsString('Mask selector', $html);
+        self::assertStringContainsString('img.hero', $html);
         self::assertStringContainsString('HTTP error 500', $html);
         self::assertStringContainsString('<span class="http-status">500/200</span>', $html);
         self::assertStringContainsString('Home', $html);

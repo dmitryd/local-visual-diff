@@ -23,6 +23,7 @@ final class RunSummary
         public readonly int $runtimeErrorPages,
         public readonly int $skippedPages,
         public readonly int $shiftTolerance,
+        public readonly string $maskSelector,
         public readonly bool $captureMatchingScreenshots
     ) {
     }
@@ -49,6 +50,7 @@ final class RunSummary
             'runtimeErrorPages' => $this->runtimeErrorPages,
             'skippedPages' => $this->skippedPages,
             'shiftTolerance' => $this->shiftTolerance,
+            'maskSelector' => $this->maskSelector,
             'captureMatchingScreenshots' => $this->captureMatchingScreenshots,
         ];
     }

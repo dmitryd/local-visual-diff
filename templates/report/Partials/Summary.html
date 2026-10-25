@@ -45,6 +45,15 @@
         <span class="summary-value">{summary.shiftTolerance}</span>
     </div>
     <div class="summary-item">
+        <span class="summary-label">Mask selector</span>
+        <span class="summary-value">
+            <f:if condition="{summary.maskSelector}">
+                <f:then>{summary.maskSelector}</f:then>
+                <f:else>disabled</f:else>
+            </f:if>
+        </span>
+    </div>
+    <div class="summary-item">
         <span class="summary-label">Matching screenshots</span>
         <span class="summary-value">
             <f:if condition="{summary.captureMatchingScreenshots}">

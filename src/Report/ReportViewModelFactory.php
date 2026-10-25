@@ -53,6 +53,7 @@ final class ReportViewModelFactory
             'runtimeErrorPages' => (int) ($summary['runtimeErrorPages'] ?? $counts['runtime_error']),
             'skippedPages' => (int) ($summary['skippedPages'] ?? $counts['skipped']),
             'shiftTolerance' => (int) ($summary['shiftTolerance'] ?? 0),
+            'maskSelector' => (string) ($summary['maskSelector'] ?? ''),
             'captureMatchingScreenshots' => (bool) ($summary['captureMatchingScreenshots'] ?? false),
         ];
     }

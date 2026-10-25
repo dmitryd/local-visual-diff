@@ -869,7 +869,8 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
         bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
-        ?string $osFamily = null
+        ?string $osFamily = null,
+        string $maskSelector = ''
     ): PageSnapshot {
         unset(
             $viewportWidth,
@@ -879,7 +880,8 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
             $scrollWarmup,
             $acceptLanguage,
             $configuredBrowserPath,
-            $osFamily
+            $osFamily,
+            $maskSelector
         );
 
         $spec = $this->snapshotSpec($url);
@@ -955,7 +957,8 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
         bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
-        ?string $osFamily = null
+        ?string $osFamily = null,
+        string $maskSelector = ''
     ): array {
         return [
             'baseline' => $this->capture(
@@ -968,7 +971,8 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
                 $scrollWarmup,
                 $acceptLanguage,
                 $configuredBrowserPath,
-                $osFamily
+                $osFamily,
+                $maskSelector
             ),
             'candidate' => $this->capture(
                 $candidateUrl,
@@ -980,7 +984,8 @@ final class CrawlFixtureScreenshotService extends ScreenshotService
                 $scrollWarmup,
                 $acceptLanguage,
                 $configuredBrowserPath,
-                $osFamily
+                $osFamily,
+                $maskSelector
             ),
         ];
     }

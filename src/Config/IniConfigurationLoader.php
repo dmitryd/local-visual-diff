@@ -97,6 +97,9 @@ final class IniConfigurationLoader
                 case 'accept_language':
                     $nested['browser']['accept_language'] = $value;
                     break;
+                case 'mask_selector':
+                    $nested['browser']['mask_selector'] = $value;
+                    break;
                 case 'viewport_width':
                 case 'viewport_height':
                 case 'settle_ms':

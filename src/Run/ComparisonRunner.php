@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LocalVisualDiff\Run;
 
 use LocalVisualDiff\Browser\NonHtmlDocumentException;
+use LocalVisualDiff\Browser\PageMaskingException;
 use LocalVisualDiff\Browser\PageSnapshot;
 use LocalVisualDiff\Browser\ScreenshotService;
 use LocalVisualDiff\Crawl\UrlMapper;
@@ -132,6 +133,8 @@ final class ComparisonRunner
             );
             $baselineSnapshot = $snapshots['baseline'];
             $candidateSnapshot = $snapshots['candidate'];
+        } catch (PageMaskingException $exception) {
+            throw $exception;
         } catch (NonHtmlDocumentException $exception) {
             $this->filesystem->removeFileIfExists($baselineScreenshotPath);
             $this->filesystem->removeFileIfExists($candidateScreenshotPath);
@@ -342,8 +345,11 @@ final class ComparisonRunner
                     $configuration->scrollWarmup,
                     $configuration->acceptLanguage,
                     $configuration->browserPath,
-                    PHP_OS_FAMILY
+                    PHP_OS_FAMILY,
+                    $configuration->maskSelector
                 );
+            } catch (PageMaskingException $exception) {
+                throw $exception;
             } catch (NonHtmlDocumentException $exception) {
                 throw $exception;
             } catch (Throwable $throwable) {
@@ -383,8 +389,11 @@ final class ComparisonRunner
                     $configuration->scrollWarmup,
                     $configuration->acceptLanguage,
                     $configuration->browserPath,
-                    PHP_OS_FAMILY
+                    PHP_OS_FAMILY,
+                    $configuration->maskSelector
                 );
+            } catch (PageMaskingException $exception) {
+                throw $exception;
             } catch (NonHtmlDocumentException $exception) {
                 throw $exception;
             } catch (Throwable $throwable) {
@@ -612,6 +621,7 @@ final class ComparisonRunner
             runtimeErrorPages: $counts['runtime_error'],
             skippedPages: $counts['skipped'],
             shiftTolerance: $configuration->shiftTolerance,
+            maskSelector: $configuration->maskSelector,
             captureMatchingScreenshots: $configuration->captureMatchingScreenshots
         );
     }

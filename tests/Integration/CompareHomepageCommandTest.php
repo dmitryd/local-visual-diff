@@ -177,6 +177,50 @@ final class CompareHomepageCommandTest extends TestCase
         }
     }
 
+    public function testMaskSelectorIsAcceptedAndRecordedInReport(): void
+    {
+        $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
+        $this->removeDirectoryIfExists($outputDir);
+
+        try {
+            $command = $this->buildCommand(
+                [
+                    'http://legacy.local' => [
+                        'background' => 'white',
+                    ],
+                    'http://upgraded.local' => [
+                        'background' => 'white',
+                    ],
+                ]
+            );
+
+            $tester = new CommandTester($command);
+            $tester->execute([
+                'baseline-base-url' => 'http://legacy.local',
+                'candidate-base-url' => 'http://upgraded.local',
+                '--mask-selector' => 'img.hero',
+            ]);
+
+            self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+
+            $report = json_decode(
+                (string) file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.json'),
+                true,
+                512,
+                JSON_THROW_ON_ERROR
+            );
+
+            self::assertSame('img.hero', $report['summary']['maskSelector']);
+
+            $html = file_get_contents($outputDir . DIRECTORY_SEPARATOR . 'report.html');
+            self::assertIsString($html);
+            self::assertStringContainsString('Mask selector', $html);
+            self::assertStringContainsString('img.hero', $html);
+        } finally {
+            $this->removeDirectoryIfExists($outputDir);
+        }
+    }
+
     public function testComparisonFailureBecomesRuntimeErrorAndReportIsWritten(): void
     {
         $outputDir = dirname(__DIR__, 2) . '/var/results/run-20260331-103000';
@@ -671,7 +715,8 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
         bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
-        ?string $osFamily = null
+        ?string $osFamily = null,
+        string $maskSelector = ''
     ): PageSnapshot {
         unset(
             $viewportWidth,
@@ -681,7 +726,8 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
             $scrollWarmup,
             $acceptLanguage,
             $configuredBrowserPath,
-            $osFamily
+            $osFamily,
+            $maskSelector
         );
 
         $spec = $this->snapshots[$url] ?? null;
@@ -720,7 +766,8 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
         bool $scrollWarmup = false,
         string $acceptLanguage = 'de, en',
         ?string $configuredBrowserPath = null,
-        ?string $osFamily = null
+        ?string $osFamily = null,
+        string $maskSelector = ''
     ): array {
         return [
             'baseline' => $this->capture(
@@ -733,7 +780,8 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
                 $scrollWarmup,
                 $acceptLanguage,
                 $configuredBrowserPath,
-                $osFamily
+                $osFamily,
+                $maskSelector
             ),
             'candidate' => $this->capture(
                 $candidateUrl,
@@ -745,7 +793,8 @@ final class HomepageFixtureScreenshotService extends ScreenshotService
                 $scrollWarmup,
                 $acceptLanguage,
                 $configuredBrowserPath,
-                $osFamily
+                $osFamily,
+                $maskSelector
             ),
         ];
     }

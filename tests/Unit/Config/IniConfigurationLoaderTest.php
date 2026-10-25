@@ -28,6 +28,7 @@ final class IniConfigurationLoaderTest extends TestCase
 [browser]
 path = "/defaults/browser"
 accept_language = "de, en"
+mask_selector = ""
 viewport_width = 1440
 viewport_height = 900
 settle_ms = 1000
@@ -59,6 +60,7 @@ INI);
         $localPath = $this->createTempIni(<<<'INI'
 [browser]
 path = "/local/browser"
+mask_selector = ".local-mask"
 INI);
 
         $loader = new IniConfigurationLoader();
@@ -67,12 +69,14 @@ INI);
             $localPath,
             [
                 'browser_path' => '/custom/browser',
+                'mask_selector' => '.cli-mask',
                 'image_compare_memory_limit' => '768M',
             ]
         );
 
         self::assertSame('/custom/browser', $config->browserPath);
         self::assertSame('de, en', $config->acceptLanguage);
+        self::assertSame('.cli-mask', $config->maskSelector);
         self::assertSame(1440, $config->viewportWidth);
         self::assertSame(900, $config->viewportHeight);
         self::assertSame('var/results', $config->outputDir);

@@ -164,6 +164,7 @@ Example:
 [browser]
 path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
 accept_language = "de, en"
+mask_selector = ""
 scroll_warmup = false
 
 [crawl]
@@ -181,6 +182,11 @@ artifact_image_format = "webp"
   Browser executable path. If empty or invalid, the tool also tries common browser locations for the current OS.
 - `accept_language`
   Language preference used for browser capture. Default: `"de, en"`.
+- `mask_selector`
+  CSS selector for regions covered with opaque `#808080` rectangles before
+  baseline and candidate screenshots are captured. The default is an empty
+  string, which disables masking. Invalid selectors fail the capture; valid
+  selectors that match no elements are allowed.
 - `viewport_width`
   Browser viewport width in pixels.
 - `viewport_height`
@@ -243,6 +249,7 @@ Important options:
 - `--output-dir`
 - `--browser-path`
 - `--accept-language`
+- `--mask-selector`
 - `--viewport-width`
 - `--viewport-height`
 - `--settle-ms`
@@ -286,6 +293,17 @@ Compare one explicit page only:
 ```bash
 php bin/visual-diff --single-page=/en/check-this/page/ https://legacy.local https://candidate.local
 ```
+
+Ignore unstable image pixels while preserving image layout and dimensions:
+
+```bash
+php bin/visual-diff --mask-selector='img, picture' https://legacy.local https://candidate.local
+```
+
+The selector is evaluated independently on both pages immediately before
+capture. Each matched rendered bounding box is covered with the same opaque
+grey rectangle, so the selected content does not participate in pixel
+comparison while its position and size still do.
 
 Show detailed diagnostics while running:
 
